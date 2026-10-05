@@ -19,10 +19,12 @@ Return ONLY valid JSON (no extra text) in exactly this format so I can import it
       "durationMin": 10,
       "reps": 50,
       "target": "Measurable success goal, e.g. 8 of 10 land in the kitchen",
-      "instructions": "Setup, how to run it, and key coaching cues"
+      "instructions": "Setup, how to run it, and key coaching cues",
+      "videos": [{ "title": "Video title", "url": "https://..." }]
     }
   ]
 }
+Only include "videos" with URLs you are certain exist; otherwise use an empty list (the app adds a YouTube search link for every drill).
 For several plans at once, wrap them as {"plans": [ ... ]}.
 ```
 
@@ -38,6 +40,7 @@ For several plans at once, wrap them as {"plans": [ ... ]}.
 | `drills[].reps` | no | Rep goal shown next to the counter. |
 | `drills[].target` | no | Success criterion. |
 | `drills[].instructions` | no | Text or a list of steps. |
+| `drills[].videos` | no | Reference videos: a list of `{"title", "url"}` objects, or plain URLs. Only `http(s)` links are kept. Every drill also gets a *Search YouTube* link automatically, and you can add your own links in the app. |
 
 A single file can hold one plan, `{"plans": [...]}`, or a list of plans `[...]`. The importer also accepts common alternative field names (`title`, `minutes`, `goal`, `description`, …), so small variations in Claude's output still import.
 
@@ -46,7 +49,9 @@ A single file can hold one plan, `{"plans": [...]}`, or a list of plans `[...]`.
 Use one row per drill. Add a `Plan` column to put several plans in one file. Without it, the file name becomes the plan name.
 
 ```csv
-Plan,Drill,Category,Duration (min),Reps,Target,Instructions
-Soft game,Cross-court dinks,Dinking,10,50,80% in the kitchen,Paddle up; lift with the legs
-Soft game,Third-shot drops,Drops,12,30,7 of 10 in the kitchen,Partner feeds deep
+Plan,Drill,Category,Duration (min),Reps,Target,Instructions,Videos
+Soft game,Cross-court dinks,Dinking,10,50,80% in the kitchen,Paddle up; lift with the legs,https://www.youtube.com/watch?v=...
+Soft game,Third-shot drops,Drops,12,30,7 of 10 in the kitchen,Partner feeds deep,
 ```
+
+To list several videos in the `Videos` column, separate the URLs with `|`.

@@ -14,6 +14,14 @@ const localTime = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 const fmtDate = (iso) => new Date(iso).toLocaleString(undefined,
   { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 const starText = (n) => (n ? '★'.repeat(n) : '');
+// Only allow real web links, never javascript: or data: URLs
+const safeUrl = (u) => {
+  try { const x = new URL(String(u ?? '').trim()); return /^https?:$/.test(x.protocol) ? x.href : null; }
+  catch { return null; }
+};
+const hostLabel = (url) => `${new URL(url).hostname.replace(/^(www|m)\./, '')} video`;
+const youtubeSearch = (name) =>
+  `https://www.youtube.com/results?search_query=${encodeURIComponent(`pickleball ${name} drill`)}`;
 
 // ---------- Storage (IndexedDB) ----------
 let dbPromise;
@@ -67,6 +75,27 @@ async function loadAll() {
 }
 const planById = (id) => state.plans.find((p) => p.id === id);
 const currentResult = () => state.active?.results[state.active.current];
+const pastPartners = () => [...new Set(state.sessions.map((s) => s.partner).filter(Boolean))]; // most recent first
+
+// Per-player fields on a drill result: "me" uses hits/rating/notes, "partner" the partner* versions
+const hitsKey = (player) => (player === 'partner' ? 'partnerHits' : 'hits');
+const ratingKey = (player) => (player === 'partner' ? 'partnerRating' : 'rating');
+const notesKey = (player) => (player === 'partner' ? 'partnerNotes' : 'notes');
+const playerOf = () => (state.active?.partner ? state.active.player : 'me');
+
+// Fill in fields added after a session was started on an older version of the app
+function upgradeActive(a) {
+  if (!a) return null;
+  a.partner ??= '';
+  a.player ??= 'me';
+  for (const r of a.results) {
+    r.partnerHits ??= [];
+    r.partnerRating ??= 0;
+    r.partnerNotes ??= '';
+    r.videos ??= [];
+  }
+  return a;
+}
 
 const saveActive = () => setMeta('active', state.active);
 let saveTimer;
@@ -92,7 +121,19 @@ const DRILL_KEYS = {
   reps: ['reps', 'repetitions', 'targetreps', 'count', 'balls'],
   target: ['target', 'goal', 'successcriteria', 'success'],
   instructions: ['instructions', 'description', 'details', 'howto', 'setup', 'cues', 'notes'],
+  videos: ['videos', 'video', 'videourl', 'videourls', 'videolinks', 'links', 'link'],
 };
+
+// Accepts a URL, a list of URLs (array, or a "|"-/space-separated string), or [{title, url}]
+function normVideos(v) {
+  if (!v) return [];
+  const list = Array.isArray(v) ? v : typeof v === 'object' ? [v] : String(v).split(/[\s|]+/);
+  return list.map((item) => {
+    if (typeof item !== 'object' || item === null) return { title: '', url: safeUrl(item) };
+    const o = normKeys(item);
+    return { title: str(pick(o, ['title', 'name', 'label'])), url: safeUrl(pick(o, ['url', 'link', 'href'])) };
+  }).filter((x) => x.url);
+}
 
 function normDrill(raw) {
   const d = normKeys(raw);
@@ -103,6 +144,7 @@ function normDrill(raw) {
     reps: num(pick(d, DRILL_KEYS.reps)),
     target: str(pick(d, DRILL_KEYS.target)),
     instructions: str(pick(d, DRILL_KEYS.instructions)),
+    videos: normVideos(pick(d, DRILL_KEYS.videos)),
   };
 }
 
@@ -176,7 +218,14 @@ async function importText(text, filename) {
   for (const p of plans) {
     // Re-importing a plan with the same name replaces it (past sessions are unaffected)
     const existing = state.plans.find((x) => x.id === p.id || x.name.toLowerCase() === p.name.toLowerCase());
-    if (existing) p.id = existing.id;
+    if (existing) {
+      p.id = existing.id;
+      // Keep video links you added in the app for drills that are still in the plan
+      for (const d of p.drills) {
+        const old = existing.drills.find((o) => o.name.toLowerCase() === d.name.toLowerCase());
+        for (const v of old?.videos ?? []) if (!d.videos.some((x) => x.url === v.url)) d.videos.push(v);
+      }
+    }
     await db.put('plans', p);
   }
   for (const s of sessions) await db.put('sessions', s);
@@ -192,6 +241,7 @@ async function importText(text, filename) {
 // ---------- Export ----------
 const CSV_COLS = ['session_date', 'start_time', 'plan', 'drill_no', 'drill', 'category', 'target',
   'planned_min', 'actual_min', 'attempts', 'made', 'success_pct', 'drill_rating', 'drill_notes',
+  'partner', 'partner_attempts', 'partner_made', 'partner_success_pct', 'partner_rating', 'partner_notes',
   'session_rating', 'session_notes', 'session_id'];
 
 function sessionsToCSV(sessions) {
@@ -202,7 +252,13 @@ function sessionsToCSV(sessions) {
     s.results.forEach((r, i) => rows.push([
       localDate(d), localTime(d), s.planName, i + 1, r.name, r.category, r.target,
       r.durationMin || '', (r.elapsedSec / 60).toFixed(1), r.attempts, r.made,
-      pct(r.made, r.attempts) ?? '', r.rating || '', r.notes, s.rating || '', s.notes, s.id,
+      pct(r.made, r.attempts) ?? '', r.rating || '', r.notes,
+      s.partner || '',
+      s.partner ? r.partnerAttempts ?? 0 : '',
+      s.partner ? r.partnerMade ?? 0 : '',
+      s.partner ? pct(r.partnerMade, r.partnerAttempts) ?? '' : '',
+      r.partnerRating || '', r.partnerNotes || '',
+      s.rating || '', s.notes, s.id,
     ]));
   }
   // BOM so Excel opens it as UTF-8
@@ -252,9 +308,13 @@ async function startSession(planId) {
   const p = planById(planId);
   state.active = {
     id: uid(), planId: p.id, planName: p.name, startedAt: new Date().toISOString(),
-    current: 0, timerStartedAt: null, rating: 0, notes: '',
-    results: p.drills.map((d) => ({ ...d, hits: [], rating: 0, notes: '', elapsedSec: 0, done: false })),
+    current: 0, timerStartedAt: null, rating: 0, notes: '', partner: '', player: 'me',
+    results: p.drills.map((d) => ({
+      ...d, videos: [...(d.videos || [])], hits: [], rating: 0, notes: '',
+      partnerHits: [], partnerRating: 0, partnerNotes: '', elapsedSec: 0, done: false,
+    })),
   };
+  state.editPartner = false;
   await saveActive();
   requestPersistence();
   state.tab = 'session';
@@ -275,11 +335,15 @@ function goTo(i) {
 async function finishSession() {
   const a = state.active;
   pauseTimer();
-  const { current, timerStartedAt, ...rest } = a;
+  const { current, timerStartedAt, player, ...rest } = a;
   const session = {
     ...rest,
     endedAt: new Date().toISOString(),
-    results: a.results.map((r) => ({ ...r, attempts: r.hits.length, made: r.hits.filter(Boolean).length })),
+    results: a.results.map((r) => ({
+      ...r,
+      attempts: r.hits.length, made: r.hits.filter(Boolean).length,
+      partnerAttempts: r.partnerHits.length, partnerMade: r.partnerHits.filter(Boolean).length,
+    })),
   };
   await db.put('sessions', session);
   state.active = null;
@@ -382,6 +446,38 @@ async function requestPersistence() {
 const stars = (value, scope) => `<div class="stars" role="group" aria-label="Rating">${[1, 2, 3, 4, 5].map((n) =>
   `<button class="star ${n <= value ? 'on' : ''}" data-action="rate" data-scope="${scope}" data-v="${n}" aria-label="${n} of 5">★</button>`).join('')}</div>`;
 
+function videoLinks(d, planId, i, removable = false) {
+  const saved = (d.videos || []).map((v, vi) => `<li>
+    <a href="${esc(v.url)}" target="_blank" rel="noopener noreferrer">▶ ${esc(v.title || hostLabel(v.url))}</a>
+    ${removable ? `<button class="link danger" data-action="remove-video" data-plan="${esc(planId)}" data-i="${i}" data-v="${vi}" aria-label="Remove video">✕</button>` : ''}
+  </li>`).join('');
+  return `<ul class="video-list">${saved}
+    <li><a href="${esc(youtubeSearch(d.name))}" target="_blank" rel="noopener noreferrer">🔎 Search YouTube for this drill</a></li>
+    <li><button class="link" data-action="add-video" data-plan="${esc(planId)}" data-i="${i}">＋ Add video link</button></li>
+  </ul>`;
+}
+
+function partnerBar(a) {
+  if (state.editPartner) {
+    return `<div class="card partner-bar">
+      <label for="partnerName">Drilling with</label>
+      <div class="row tight">
+        <input id="partnerName" list="partnerList" value="${esc(a.partner)}" placeholder="Partner’s name (blank = just you)" autocomplete="off" enterkeyhint="done">
+        <button class="btn primary" data-action="save-partner">Save</button>
+      </div>
+      <datalist id="partnerList">${pastPartners().map((n) => `<option value="${esc(n)}"></option>`).join('')}</datalist>
+    </div>`;
+  }
+  return a.partner
+    ? `<p class="partner-line">👥 With <b>${esc(a.partner)}</b> · <button class="link" data-action="edit-partner">Change</button></p>`
+    : `<p class="partner-line"><button class="link" data-action="edit-partner">＋ Log a partner’s results too</button></p>`;
+}
+
+const hitCell = (hits) => {
+  const m = hits.filter(Boolean).length;
+  return hits.length ? `${m}/${hits.length} <span class="muted">${pct(m, hits.length)}%</span>` : '–';
+};
+
 function drillMeta(d) {
   const bits = [d.category, d.durationMin && `${d.durationMin} min`, d.reps && `${d.reps} reps`].filter(Boolean);
   return bits.length ? `<span class="muted small"> · ${bits.map(esc).join(' · ')}</span>` : '';
@@ -399,10 +495,11 @@ const views = {
         </button>
         ${open ? `<div class="card-body">
           ${p.description ? `<p>${esc(p.description)}</p>` : ''}
-          <ol class="drill-list">${p.drills.map((d) => `<li>
+          <ol class="drill-list">${p.drills.map((d, i) => `<li>
             <strong>${esc(d.name)}</strong>${drillMeta(d)}
             ${d.target ? `<p class="small"><b>Target:</b> ${esc(d.target)}</p>` : ''}
             ${d.instructions ? `<p class="muted small">${esc(d.instructions)}</p>` : ''}
+            ${videoLinks(d, p.id, i, true)}
           </li>`).join('')}</ol>
           <div class="row">
             <button class="btn primary" data-action="start" data-id="${p.id}">▶ Start session</button>
@@ -442,16 +539,22 @@ const views = {
     if (a.current === a.results.length) return head + chips + summaryView(a);
 
     const r = currentResult();
-    const made = r.hits.filter(Boolean).length;
-    const att = r.hits.length;
+    const player = playerOf();
+    const who = player === 'partner' ? a.partner : 'you';
+    const hits = r[hitsKey(player)];
+    const made = hits.filter(Boolean).length;
+    const att = hits.length;
     const c = clockState(r);
     const isLast = a.current === a.results.length - 1;
-    return `${head}${chips}
+    return `${head}${chips}${partnerBar(a)}
       <article class="card drill">
         ${r.category ? `<p class="eyebrow">${esc(r.category)}</p>` : ''}
         <h2>${esc(r.name)}</h2>
         ${r.target ? `<p><b>Target:</b> ${esc(r.target)}</p>` : ''}
         ${r.instructions ? `<p class="muted">${esc(r.instructions)}</p>` : ''}
+        <details class="videos"><summary>🎬 Videos${r.videos.length ? ` (${r.videos.length})` : ''}</summary>
+          ${videoLinks(r, a.planId, a.current)}
+        </details>
       </article>
 
       <div class="card timer">
@@ -464,6 +567,15 @@ const views = {
       </div>
 
       <div class="card counter">
+        ${a.partner ? `<div class="seg" role="group" aria-label="Logging for">
+          ${['me', 'partner'].map((p) => `<button class="${p === player ? 'on' : ''}" data-action="player" data-v="${p}" aria-pressed="${p === player}">
+            ${p === 'me' ? 'You' : esc(a.partner)}<span class="small">${(() => {
+              const h = r[hitsKey(p)];
+              const m = h.filter(Boolean).length;
+              return h.length ? `${m}/${h.length} · ${pct(m, h.length)}%` : 'no shots yet';
+            })()}</span>
+          </button>`).join('')}
+        </div>` : ''}
         <div class="score"><span class="big-num">${made}</span> / ${att}
           ${att ? `<span class="muted">· ${pct(made, att)}%</span>` : ''}
           ${r.reps ? `<span class="muted small">· goal ${r.reps}</span>` : ''}</div>
@@ -475,10 +587,10 @@ const views = {
       </div>
 
       <div class="card">
-        <label>How did it go?</label>
-        ${stars(r.rating, 'drill')}
-        <label for="drillNotes">Notes</label>
-        <textarea id="drillNotes" data-field="drill-notes" rows="3" placeholder="What worked, what to fix…">${esc(r.notes)}</textarea>
+        <label>How did it go${a.partner ? ` for ${esc(who)}` : ''}?</label>
+        ${stars(r[ratingKey(player)], 'drill')}
+        <label for="drillNotes">Notes${a.partner ? ` · ${esc(who)}` : ''}</label>
+        <textarea id="drillNotes" data-field="drill-notes" rows="3" placeholder="What worked, what to fix…">${esc(r[notesKey(player)])}</textarea>
       </div>
 
       <div class="row nav">
@@ -491,9 +603,16 @@ const views = {
     if (!state.sessions.length) {
       return `<div class="empty"><h2>No sessions yet</h2><p class="muted">Finished sessions will show up here.</p></div>`;
     }
-    const stats = drillStats();
-    const statsTable = stats.length ? `<section class="card">
-        <h3>Drill progress</h3>
+    const partners = pastPartners();
+    const who = partners.includes(state.statsPlayer) ? state.statsPlayer : 'me';
+    const picker = partners.length ? `<select data-field="stats-player" aria-label="Show progress for">
+        ${[['me', 'You'], ...partners.map((n) => [n, n])].map(([v, label]) =>
+          `<option value="${esc(v)}" ${v === who ? 'selected' : ''}>${esc(label)}</option>`).join('')}
+      </select>` : '';
+    const stats = drillStats(who);
+    const statsTable = stats.length || partners.length ? `<section class="card">
+        <div class="toolbar"><h3>Drill progress</h3>${picker}</div>
+        ${stats.length ? '' : '<p class="muted small">No made/miss results logged yet.</p>'}
         <table class="table">
           <thead><tr><th>Drill</th><th>Sessions</th><th>Overall</th><th>Trend</th></tr></thead>
           <tbody>${stats.map((s) => `<tr>
@@ -550,15 +669,14 @@ const views = {
 };
 
 function summaryView(a) {
-  const rows = a.results.map((r, i) => {
-    const m = r.hits.filter(Boolean).length;
-    const n = r.hits.length;
-    return `<tr class="clickable" data-action="goto" data-i="${i}">
-      <td>${esc(r.name)}</td><td>${n ? `${m}/${n}` : '–'}</td><td>${n ? pct(m, n) + '%' : ''}</td><td class="gold">${starText(r.rating)}</td></tr>`;
-  }).join('');
+  const rows = a.results.map((r, i) => `<tr class="clickable" data-action="goto" data-i="${i}">
+      <td>${esc(r.name)}</td>
+      <td>${hitCell(r.hits)} <span class="gold">${starText(r.rating)}</span></td>
+      ${a.partner ? `<td>${hitCell(r.partnerHits)} <span class="gold">${starText(r.partnerRating)}</span></td>` : ''}
+    </tr>`).join('');
   return `<section class="card">
       <h2>Session summary</h2>
-      <table class="table"><thead><tr><th>Drill</th><th>Made</th><th>%</th><th>Rating</th></tr></thead><tbody>${rows}</tbody></table>
+      <table class="table"><thead><tr><th>Drill</th><th>You</th>${a.partner ? `<th>${esc(a.partner)}</th>` : ''}</tr></thead><tbody>${rows}</tbody></table>
     </section>
     <section class="card">
       <label>Overall session</label>
@@ -580,33 +698,42 @@ function sessionCard(s) {
   const open = state.openSession === s.id;
   return `<article class="card">
     <button class="card-head" data-action="toggle-session" data-id="${s.id}" aria-expanded="${open}">
-      <div><h3>${esc(s.planName)}</h3>
+      <div><h3>${esc(s.planName)}${s.partner ? ` <span class="muted small">· with ${esc(s.partner)}</span>` : ''}</h3>
         <p class="muted small">${fmtDate(s.startedAt)} · ${mins} min${attempts ? ` · ${pct(made, attempts)}% (${made}/${attempts})` : ''}
         <span class="gold">${starText(s.rating)}</span></p></div>
       <span class="chev">${open ? '▾' : '▸'}</span>
     </button>
     ${open ? `<div class="card-body">
       ${s.notes ? `<p class="note">${esc(s.notes)}</p>` : ''}
-      <ul class="result-list">${s.results.map((r) => `<li>
-        <div class="rl-head"><strong>${esc(r.name)}</strong>
-          <span class="small">${r.attempts ? `${r.made}/${r.attempts} · ${pct(r.made, r.attempts)}%` : ''} <span class="gold">${starText(r.rating)}</span></span></div>
-        ${r.notes ? `<p class="muted small note">${esc(r.notes)}</p>` : ''}
-      </li>`).join('')}</ul>
+      <ul class="result-list">${s.results.map((r) => {
+        const line = (label, made, attempts, rating, notes) => `
+          <div class="rl-head"><span class="small">${label}</span>
+            <span class="small">${attempts ? `${made}/${attempts} · ${pct(made, attempts)}%` : ''} <span class="gold">${starText(rating)}</span></span></div>
+          ${notes ? `<p class="muted small note">${esc(notes)}</p>` : ''}`;
+        return `<li><strong>${esc(r.name)}</strong>
+          ${line(s.partner ? 'You' : '', r.made, r.attempts, r.rating, r.notes)}
+          ${s.partner ? line(esc(s.partner), r.partnerMade ?? 0, r.partnerAttempts ?? 0, r.partnerRating, r.partnerNotes) : ''}
+        </li>`;
+      }).join('')}</ul>
       <button class="btn ghost danger" data-action="delete-session" data-id="${s.id}">Delete session</button>
     </div>` : ''}
   </article>`;
 }
 
-function drillStats() {
+// who: 'me', or a partner's name
+function drillStats(who) {
   const map = new Map();
   for (const s of [...state.sessions].reverse()) { // oldest first, so trends read left→right
+    if (who !== 'me' && s.partner !== who) continue;
     for (const r of s.results) {
-      if (!r.attempts) continue;
+      const made = who === 'me' ? r.made : r.partnerMade ?? 0;
+      const attempts = who === 'me' ? r.attempts : r.partnerAttempts ?? 0;
+      if (!attempts) continue;
       const e = map.get(r.name) ?? { name: r.name, sessions: 0, made: 0, attempts: 0, trend: [] };
       e.sessions++;
-      e.made += r.made;
-      e.attempts += r.attempts;
-      e.trend.push(pct(r.made, r.attempts));
+      e.made += made;
+      e.attempts += attempts;
+      e.trend.push(pct(made, attempts));
       map.set(r.name, e);
     }
   }
@@ -645,17 +772,58 @@ const actions = {
   'timer-toggle': toggleTimer,
   'timer-reset': resetTimer,
   hit: (el) => {
-    currentResult().hits.push(el.dataset.v === '1');
+    currentResult()[hitsKey(playerOf())].push(el.dataset.v === '1');
     navigator.vibrate?.(30);
     saveActive();
     render();
   },
-  undo: () => { currentResult().hits.pop(); saveActive(); render(); },
+  undo: () => { currentResult()[hitsKey(playerOf())].pop(); saveActive(); render(); },
   rate: (el) => {
-    const target = el.dataset.scope === 'session' ? state.active : currentResult();
+    const [target, key] = el.dataset.scope === 'session'
+      ? [state.active, 'rating']
+      : [currentResult(), ratingKey(playerOf())];
     const v = +el.dataset.v;
-    target.rating = target.rating === v ? 0 : v; // tap the same star again to clear
+    target[key] = target[key] === v ? 0 : v; // tap the same star again to clear
     saveActive();
+    render();
+  },
+  player: (el) => { state.active.player = el.dataset.v; saveActive(); render(); },
+  'edit-partner': () => { state.editPartner = true; render(); $('#partnerName')?.focus(); },
+  'save-partner': () => {
+    const a = state.active;
+    a.partner = $('#partnerName').value.trim();
+    a.player = a.partner ? 'partner' : 'me';
+    state.editPartner = false;
+    saveActive();
+    render();
+  },
+  'add-video': async (el) => {
+    const input = prompt('Paste a video link (YouTube, Instagram, etc.):');
+    if (input === null) return;
+    const url = safeUrl(input);
+    if (!url) return toast('That isn’t a valid web link (it should start with https://)', true);
+    const title = (prompt('Title for this video (optional):') ?? '').trim();
+    const video = { title, url };
+    const i = +el.dataset.i;
+    const p = planById(el.dataset.plan);
+    if (p?.drills[i]) {
+      p.drills[i].videos = [...(p.drills[i].videos || []), video];
+      await db.put('plans', p);
+    }
+    const a = state.active;
+    if (a?.planId === el.dataset.plan && a.results[i]) {
+      a.results[i].videos = [...(a.results[i].videos || []), video];
+      await saveActive();
+    }
+    toast('Video link saved');
+    render();
+  },
+  'remove-video': async (el) => {
+    const p = planById(el.dataset.plan);
+    const d = p?.drills[+el.dataset.i];
+    if (!d || !confirm('Remove this video link?')) return;
+    d.videos.splice(+el.dataset.v, 1);
+    await db.put('plans', p);
     render();
   },
   finish: finishSession,
@@ -689,9 +857,15 @@ function bindEvents() {
   document.addEventListener('input', (e) => {
     const field = e.target.dataset.field;
     if (!field || !state.active) return;
-    if (field === 'drill-notes') currentResult().notes = e.target.value;
+    if (field === 'drill-notes') currentResult()[notesKey(playerOf())] = e.target.value;
     if (field === 'session-notes') state.active.notes = e.target.value;
     saveActiveSoon();
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target.dataset.field === 'stats-player') { state.statsPlayer = e.target.value; render(); }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.target.id === 'partnerName' && e.key === 'Enter') { e.preventDefault(); actions['save-partner'](); }
   });
   document.addEventListener('visibilitychange', () => {
     if (state.active) saveActive();
@@ -730,17 +904,19 @@ Return ONLY valid JSON (no extra text) in exactly this format so I can import it
       "durationMin": 10,
       "reps": 50,
       "target": "Measurable success goal, e.g. 8 of 10 land in the kitchen",
-      "instructions": "Setup, how to run it, and key coaching cues"
+      "instructions": "Setup, how to run it, and key coaching cues",
+      "videos": [{ "title": "Video title", "url": "https://..." }]
     }
   ]
 }
+Only include "videos" with URLs you are certain exist; otherwise use an empty list (the app adds a YouTube search link for every drill).
 For several plans at once, wrap them as {"plans": [ ... ]}.`;
 
 // ---------- Start ----------
 async function init() {
   bindEvents();
   await loadAll();
-  state.active = (await getMeta('active')) ?? null;
+  state.active = upgradeActive((await getMeta('active')) ?? null);
   state.lastExport = (await getMeta('lastExport')) ?? null;
   state.persisted = (await navigator.storage?.persisted?.()) ?? false;
   if (state.active) state.tab = 'session';
