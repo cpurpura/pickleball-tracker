@@ -27,12 +27,13 @@ const youtubeSearch = (name) =>
 let dbPromise;
 function openDb() {
   dbPromise ??= new Promise((resolve, reject) => {
-    const req = indexedDB.open('pickleball-drills', 1);
+    const req = indexedDB.open('pickleball-drills', 2);
     req.onupgradeneeded = () => {
       const d = req.result;
-      d.createObjectStore('plans', { keyPath: 'id' });
-      d.createObjectStore('sessions', { keyPath: 'id' });
-      d.createObjectStore('meta', { keyPath: 'key' });
+      // v1: plans, sessions, meta · v2: library (individual drills)
+      for (const name of ['plans', 'sessions', 'meta', 'library']) {
+        if (!d.objectStoreNames.contains(name)) d.createObjectStore(name, { keyPath: name === 'meta' ? 'key' : 'id' });
+      }
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -62,6 +63,11 @@ const state = {
   tab: 'plans',
   plans: [],
   sessions: [],      // newest first
+  library: [],       // individual drills, usable outside of a plan
+  libSelected: new Set(), // library drill ids ticked for a custom session, in tick order
+  plansView: 'plans',     // Plans tab: 'plans' or 'drills' (library)
+  editDrill: null,        // library drill id being edited, or 'new'
+  importTarget: 'plans',
   active: null,      // in-progress session (persisted in meta so it survives closing the app)
   openPlan: null,
   openSession: null,
@@ -72,6 +78,7 @@ const state = {
 async function loadAll() {
   state.plans = (await db.all('plans')).sort((a, b) => a.name.localeCompare(b.name));
   state.sessions = (await db.all('sessions')).sort((a, b) => b.startedAt.localeCompare(a.startedAt));
+  state.library = (await db.all('library')).sort((a, b) => a.name.localeCompare(b.name));
 }
 const planById = (id) => state.plans.find((p) => p.id === id);
 const currentResult = () => state.active?.results[state.active.current];
@@ -88,7 +95,7 @@ function upgradeActive(a) {
   if (!a) return null;
   a.partner ??= '';
   a.player ??= 'me';
-  a.week ??= 1;
+  if (a.week === undefined) a.week = 1; // null = not part of a program (library session)
   a.programKey ??= a.planId;
   a.programWeeks ??= 0;
   a.rotateMin ??= 0;
@@ -275,26 +282,67 @@ function programPlans(data, fallbackName) {
 function parseImport(text, filename) {
   text = text.replace(/^﻿/, '').trim();
   const fallbackName = filename.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
-  if (!/^[[{]/.test(text)) return { plans: csvPlans(text, fallbackName), sessions: [] };
+  if (!/^[[{]/.test(text)) return { plans: csvPlans(text, fallbackName), sessions: [], library: [] };
 
   const data = JSON.parse(text);
   if (data?.type === 'pickleball-drill-backup') {
-    return { plans: (data.plans || []).map((p) => normPlan(p, fallbackName)), sessions: data.sessions || [] };
+    return {
+      plans: (data.plans || []).map((p) => normPlan(p, fallbackName)),
+      sessions: data.sessions || [],
+      library: (data.library || []).map(normDrill).filter((d) => d.name),
+    };
   }
   if (Array.isArray(data?.sessions) && data.sessions.some((s) => Array.isArray(s?.blocks || s?.drills))) {
-    return { plans: programPlans(data, fallbackName), sessions: [] };
+    return { plans: programPlans(data, fallbackName), sessions: [], library: [] };
   }
   let rawPlans;
   if (Array.isArray(data)) {
     // Either a list of plans, or a bare list of drills
     rawPlans = data.every((x) => x && (x.drills || x.Drills)) ? data : [{ name: fallbackName, drills: data }];
   } else if (Array.isArray(data.plans)) rawPlans = data.plans;
+  else if (!data.drills && !data.Drills) rawPlans = [{ name: fallbackName, drills: [data] }]; // a single drill
   else rawPlans = [data];
-  return { plans: rawPlans.map((p) => normPlan(p, fallbackName)), sessions: [] };
+  return { plans: rawPlans.map((p) => normPlan(p, fallbackName)), sessions: [], library: [] };
+}
+
+const mergeVideos = (a = [], b = []) => [...a, ...b.filter((v) => !a.some((x) => x.url === v.url))];
+
+// Add drills to the library; a drill with the same name as an existing one updates it
+async function addToLibrary(drills) {
+  const byName = new Map(state.library.map((d) => [d.name.toLowerCase(), d]));
+  let added = 0;
+  let updated = 0;
+  for (const d of drills) {
+    const key = d.name.toLowerCase();
+    const existing = byName.get(key); // also catches repeats within this batch
+    const { id, addedAt, libraryId, ...fields } = d;
+    const item = {
+      ...fields,
+      id: existing?.id || uid(),
+      videos: mergeVideos(existing?.videos, d.videos),
+      addedAt: existing?.addedAt || new Date().toISOString(),
+    };
+    await db.put('library', item);
+    byName.set(key, item);
+    if (existing) updated++; else added++;
+  }
+  await loadAll();
+  return { added, updated };
 }
 
 async function importText(text, filename) {
-  const { plans, sessions } = parseImport(text, filename);
+  const parsed = parseImport(text, filename);
+  if (state.importTarget === 'library') {
+    // Pull every drill out of the file (plan, drill list, or single drill) into the library
+    const { added, updated } = await addToLibrary([...parsed.plans.flatMap((p) => p.drills), ...parsed.library]);
+    toast(`Drill library: ${added} added${updated ? `, ${updated} updated` : ''}`);
+    state.tab = 'plans';
+    state.plansView = 'drills';
+    render();
+    return;
+  }
+  const { plans, sessions } = parsed;
+  if (parsed.library.length) await addToLibrary(parsed.library);
   for (const p of plans) {
     // Re-importing a plan with the same name replaces it (past sessions are unaffected)
     const existing = state.plans.find((x) => x.id === p.id || x.name.toLowerCase() === p.name.toLowerCase());
@@ -313,6 +361,7 @@ async function importText(text, filename) {
   const parts = [];
   if (plans.length) parts.push(`${plans.length} plan${plans.length > 1 ? 's' : ''}`);
   if (sessions.length) parts.push(`${sessions.length} session${sessions.length > 1 ? 's' : ''}`);
+  if (parsed.library.length) parts.push(`${parsed.library.length} library drill${parsed.library.length > 1 ? 's' : ''}`);
   toast(`Imported ${parts.join(' and ')}`);
   if (plans.length) { state.tab = 'plans'; state.openPlan = plans[plans.length - 1].id; }
   render();
@@ -347,7 +396,7 @@ function sessionsToCSV(sessions) {
 
 const backupJSON = () => JSON.stringify({
   type: 'pickleball-drill-backup', version: 1, exportedAt: new Date().toISOString(),
-  plans: state.plans, sessions: state.sessions,
+  plans: state.plans, sessions: state.sessions, library: state.library,
 }, null, 2);
 
 function download(file) {
@@ -396,17 +445,30 @@ function suggestWeek(programKey, maxWeeks) {
   return maxWeeks ? Math.min(week, maxWeeks) : week;
 }
 
-async function startSession(planId) {
-  if (state.active && !confirm('A session is already in progress. Discard it and start a new one?')) return;
+function startSession(planId) {
   const p = planById(planId);
-  const programKey = p.program?.id || p.id;
-  const programWeeks = p.program?.weeks || 0;
+  return beginSession({ planId: p.id, planName: p.name, drills: p.drills, program: p.program, programKey: p.program?.id || p.id });
+}
+
+// Run drills from the library, in the order given
+function startLibrarySession(ids) {
+  const drills = ids.map((id) => state.library.find((d) => d.id === id)).filter(Boolean)
+    .map(({ id, addedAt, ...d }) => ({ ...d, libraryId: id }));
+  if (!drills.length) return;
+  const planName = drills.length === 1 ? drills[0].name : `Custom session · ${drills.length} drills`;
+  return beginSession({ planId: 'library', planName, drills, program: null, programKey: null });
+}
+
+async function beginSession({ planId, planName, drills, program, programKey }) {
+  if (state.active && !confirm('A session is already in progress. Discard it and start a new one?')) return;
+  const programWeeks = program?.weeks || 0;
+  stopAlarm();
   state.active = {
-    id: uid(), planId: p.id, planName: p.name, startedAt: new Date().toISOString(),
+    id: uid(), planId, planName, startedAt: new Date().toISOString(),
     current: 0, timerStartedAt: null, rating: 0, notes: '', partner: '', player: 'me',
-    programKey, programWeeks, week: suggestWeek(programKey, programWeeks),
-    rotateMin: p.program?.rotationMin || 0,
-    results: p.drills.map((d) => ({
+    programKey, programWeeks, week: programKey ? suggestWeek(programKey, programWeeks) : null,
+    rotateMin: program?.rotationMin || 0,
+    results: drills.map((d) => ({
       ...d, videos: [...(d.videos || [])], hits: [], rating: 0, notes: '',
       partnerHits: [], partnerRating: 0, partnerNotes: '', elapsedSec: 0, done: false,
     })),
@@ -632,15 +694,115 @@ async function requestPersistence() {
 const stars = (value, scope) => `<div class="stars" role="group" aria-label="Rating">${[1, 2, 3, 4, 5].map((n) =>
   `<button class="star ${n <= value ? 'on' : ''}" data-action="rate" data-scope="${scope}" data-v="${n}" aria-label="${n} of 5">★</button>`).join('')}</div>`;
 
-function videoLinks(d, planId, i, removable = false) {
+// src says where a drill's videos are saved: { plan, i } for a plan drill, { drill } for a library drill
+const srcAttrs = (src) => (src.drill ? `data-drill="${esc(src.drill)}"` : `data-plan="${esc(src.plan)}" data-i="${src.i}"`);
+
+function videoLinks(d, src, removable = false) {
   const saved = (d.videos || []).map((v, vi) => `<li>
     <a href="${esc(v.url)}" target="_blank" rel="noopener noreferrer">▶ ${esc(v.title || hostLabel(v.url))}</a>
-    ${removable ? `<button class="link danger" data-action="remove-video" data-plan="${esc(planId)}" data-i="${i}" data-v="${vi}" aria-label="Remove video">✕</button>` : ''}
+    ${removable ? `<button class="link danger" data-action="remove-video" ${srcAttrs(src)} data-v="${vi}" aria-label="Remove video">✕</button>` : ''}
   </li>`).join('');
   return `<ul class="video-list">${saved}
     <li><a href="${esc(youtubeSearch(d.name))}" target="_blank" rel="noopener noreferrer">🔎 Search YouTube for this drill</a></li>
-    <li><button class="link" data-action="add-video" data-plan="${esc(planId)}" data-i="${i}">＋ Add video link</button></li>
+    <li><button class="link" data-action="add-video" ${srcAttrs(src)}>＋ Add video link</button></li>
   </ul>`;
+}
+
+function videoSource(el) {
+  if (el.dataset.drill) {
+    const d = state.library.find((x) => x.id === el.dataset.drill);
+    return d && { drill: d, save: () => db.put('library', d) };
+  }
+  const p = planById(el.dataset.plan);
+  const d = p?.drills[+el.dataset.i];
+  return d && { drill: d, save: () => db.put('plans', p) };
+}
+
+const inLibrary = (name) => state.library.some((d) => d.name.toLowerCase() === name.toLowerCase());
+
+function drillForm(d) {
+  const categories = [...new Set([...state.library, ...state.plans.flatMap((p) => p.drills)]
+    .map((x) => x.category).filter(Boolean))].sort();
+  return `<section class="card form">
+    <h3>${d.id ? 'Edit drill' : 'New drill'}</h3>
+    <label for="df-name">Name *</label>
+    <input id="df-name" value="${esc(d.name)}" placeholder="e.g. Cross-court dinks" autocomplete="off">
+    <label for="df-category">Category</label>
+    <input id="df-category" list="catList" value="${esc(d.category)}" placeholder="e.g. Dinking" autocomplete="off">
+    <datalist id="catList">${categories.map((c) => `<option value="${esc(c)}"></option>`).join('')}</datalist>
+    <div class="grid2">
+      <div><label for="df-duration">Minutes</label>
+        <input id="df-duration" type="number" inputmode="decimal" min="0" step="0.5" value="${d.durationMin || ''}" placeholder="blank = stopwatch"></div>
+      <div><label for="df-reps">Rep goal</label>
+        <input id="df-reps" type="number" inputmode="numeric" min="0" value="${d.reps || ''}"></div>
+    </div>
+    <label for="df-target">Target</label>
+    <input id="df-target" value="${esc(d.target)}" placeholder="e.g. 7 of 10 land in the kitchen" autocomplete="off">
+    <label for="df-instructions">Instructions</label>
+    <textarea id="df-instructions" rows="4" placeholder="Setup, how to run it, coaching cues">${esc(d.instructions)}</textarea>
+    ${d.id ? '' : `<label for="df-video">Video link <span class="muted small">(optional)</span></label>
+      <input id="df-video" type="url" inputmode="url" placeholder="https://…" autocomplete="off">`}
+    <div class="row">
+      <button class="btn primary" data-action="save-drill">Save drill</button>
+      <button class="btn" data-action="cancel-drill">Cancel</button>
+    </div>
+  </section>`;
+}
+
+function libraryView() {
+  if (state.editDrill) {
+    const d = state.editDrill === 'new' ? {} : state.library.find((x) => x.id === state.editDrill) || {};
+    return drillForm(d);
+  }
+  const selected = [...state.libSelected].filter((id) => state.library.some((d) => d.id === id));
+  const filter = (state.libFilter || '').toLowerCase();
+  const items = state.library.map((d) => {
+    const open = state.openDrill === d.id;
+    const order = selected.indexOf(d.id);
+    const search = `${d.name} ${d.category}`.toLowerCase();
+    return `<article class="card lib-item" data-search="${esc(search)}" ${filter && !search.includes(filter) ? 'hidden' : ''}>
+      <div class="lib-row">
+        <label class="pick ${order >= 0 ? 'on' : ''}" aria-label="Select ${esc(d.name)}">
+          <input type="checkbox" data-field="lib-select" value="${esc(d.id)}" ${order >= 0 ? 'checked' : ''}>
+          <span>${order >= 0 ? order + 1 : ''}</span>
+        </label>
+        <button class="card-head" data-action="toggle-drill" data-id="${esc(d.id)}" aria-expanded="${open}">
+          <div><h3>${esc(d.name)}</h3><p class="muted small">${[d.category, d.durationMin && `${d.durationMin} min`, d.reps && `${d.reps} reps`].filter(Boolean).map(esc).join(' · ') || 'Drill'}</p></div>
+          <span class="chev">${open ? '▾' : '▸'}</span>
+        </button>
+      </div>
+      ${open ? `<div class="card-body">
+        ${d.target ? `<p class="small"><b>Target:</b> ${esc(d.target)}</p>` : ''}
+        ${d.instructions ? `<p class="muted small note">${esc(d.instructions)}</p>` : ''}
+        ${videoLinks(d, { drill: d.id }, true)}
+        <div class="row">
+          <button class="btn primary" data-action="start-drill" data-id="${esc(d.id)}">▶ Start</button>
+          <button class="btn" data-action="edit-drill" data-id="${esc(d.id)}">Edit</button>
+          <button class="btn ghost danger" data-action="delete-drill" data-id="${esc(d.id)}">Delete</button>
+        </div>
+      </div>` : ''}
+    </article>`;
+  }).join('');
+
+  return `<div class="toolbar">
+      <h2>Drill library</h2>
+      <div class="row tight">
+        <button class="btn" data-action="import" data-target="library">Import</button>
+        <button class="btn primary" data-action="new-drill">＋ New</button>
+      </div>
+    </div>
+    ${state.library.length ? `
+      ${state.library.length > 5 ? `<input class="filter" data-field="lib-filter" type="search" placeholder="Filter by name or category" value="${esc(state.libFilter || '')}" aria-label="Filter drills">` : ''}
+      <p class="muted small">Tick drills to run several together. They run in the order you tick them.</p>
+      ${items}` : `<div class="empty">
+        <p>No drills in your library yet.</p>
+        <p class="muted small">Add a drill yourself, import a file of drills (JSON or CSV, or any plan file), or open a plan and tap <b>＋ Add to drill library</b> on a drill.</p>
+        <button class="btn primary" data-action="new-drill">＋ New drill</button>
+      </div>`}
+    ${selected.length ? `<div class="select-bar">
+      <button class="btn primary" data-action="start-selected">▶ Start ${selected.length} drill${selected.length > 1 ? 's' : ''}</button>
+      <button class="btn" data-action="clear-selected">Clear</button>
+    </div>` : ''}`;
 }
 
 function partnerBar(a) {
@@ -671,6 +833,12 @@ function drillMeta(d) {
 
 const views = {
   plans() {
+    const sub = `<div class="seg subtabs" role="tablist">
+      <button role="tab" class="${state.plansView !== 'drills' ? 'on' : ''}" data-action="plans-view" data-v="plans" aria-selected="${state.plansView !== 'drills'}">Plans</button>
+      <button role="tab" class="${state.plansView === 'drills' ? 'on' : ''}" data-action="plans-view" data-v="drills" aria-selected="${state.plansView === 'drills'}">Drill library${state.library.length ? ` (${state.library.length})` : ''}</button>
+    </div>`;
+    if (state.plansView === 'drills') return sub + libraryView();
+
     const list = state.plans.map((p) => {
       const mins = p.drills.reduce((t, d) => t + (d.durationMin || 0), 0);
       const open = state.openPlan === p.id;
@@ -685,7 +853,10 @@ const views = {
             <strong>${esc(d.name)}</strong>${drillMeta(d)}
             ${d.target ? `<p class="small"><b>Target:</b> ${esc(d.target)}</p>` : ''}
             ${d.instructions ? `<p class="muted small note">${esc(d.instructions)}</p>` : ''}
-            ${videoLinks(d, p.id, i, true)}
+            ${videoLinks(d, { plan: p.id, i }, true)}
+            ${inLibrary(d.name)
+              ? '<p class="muted small">✓ In drill library</p>'
+              : `<button class="link small" data-action="save-to-library" data-plan="${esc(p.id)}" data-i="${i}">＋ Add to drill library</button>`}
           </li>`).join('')}</ol>
           <div class="row">
             <button class="btn primary" data-action="start" data-id="${p.id}">▶ Start session</button>
@@ -695,9 +866,9 @@ const views = {
       </article>`;
     }).join('');
 
-    return `<div class="toolbar">
+    return `${sub}<div class="toolbar">
         <h2>Drill plans</h2>
-        <button class="btn primary" data-action="import">＋ Import</button>
+        <button class="btn primary" data-action="import" data-target="plans">＋ Import</button>
       </div>
       ${list || `<div class="empty">
         <p>No plans yet.</p>
@@ -721,9 +892,9 @@ const views = {
       <button class="chip ${a.current === a.results.length ? 'on' : ''}" data-action="goto" data-i="${a.results.length}" aria-label="Summary">✓</button></div>`;
     const head = `<div class="progress"><strong>${esc(a.planName)}</strong>
       <span class="muted small">${a.current < a.results.length ? `Drill ${a.current + 1} of ${a.results.length}` : 'Summary'}</span></div>
-      <p class="partner-line week-line">📅 Week <b>${a.week}</b>${a.programWeeks ? ` of ${a.programWeeks}` : ''}
+      ${a.week ? `<p class="partner-line week-line">📅 Week <b>${a.week}</b>${a.programWeeks ? ` of ${a.programWeeks}` : ''}
         <button class="link step" data-action="week" data-d="-1" aria-label="Previous week" ${a.week <= 1 ? 'disabled' : ''}>−</button>
-        <button class="link step" data-action="week" data-d="1" aria-label="Next week">＋</button></p>`;
+        <button class="link step" data-action="week" data-d="1" aria-label="Next week">＋</button></p>` : ''}`;
 
     if (a.current === a.results.length) return head + chips + summaryView(a);
 
@@ -742,7 +913,7 @@ const views = {
         ${r.target ? `<p><b>Target:</b> ${esc(r.target)}</p>` : ''}
         ${r.instructions ? `<p class="muted note">${esc(r.instructions)}</p>` : ''}
         <details class="videos"><summary>🎬 Videos${r.videos.length ? ` (${r.videos.length})` : ''}</summary>
-          ${videoLinks(r, a.planId, a.current)}
+          ${videoLinks(r, r.libraryId ? { drill: r.libraryId } : { plan: a.planId, i: a.current })}
         </details>
       </article>
 
@@ -947,7 +1118,7 @@ function render() {
 // ---------- Events ----------
 const actions = {
   tab: (el) => { state.tab = el.dataset.tab; render(); scrollTo(0, 0); },
-  import: () => $('#fileInput').click(),
+  import: (el) => { state.importTarget = el.dataset.target || 'plans'; $('#fileInput').click(); },
   'load-sample': async () => {
     const res = await fetch('sample-plan.json');
     await importText(await res.text(), 'sample-plan.json');
@@ -1006,26 +1177,89 @@ const actions = {
     if (!url) return toast('That isn’t a valid web link (it should start with https://)', true);
     const title = (prompt('Title for this video (optional):') ?? '').trim();
     const video = { title, url };
-    const i = +el.dataset.i;
-    const p = planById(el.dataset.plan);
-    if (p?.drills[i]) {
-      p.drills[i].videos = [...(p.drills[i].videos || []), video];
-      await db.put('plans', p);
+    const src = videoSource(el);
+    if (src) {
+      src.drill.videos = [...(src.drill.videos || []), video];
+      await src.save();
     }
+    // Show it in the running session too, if that session includes this drill
     const a = state.active;
-    if (a?.planId === el.dataset.plan && a.results[i]) {
-      a.results[i].videos = [...(a.results[i].videos || []), video];
+    if (a) {
+      a.results.forEach((r, ri) => {
+        const same = el.dataset.drill
+          ? r.libraryId === el.dataset.drill
+          : a.planId === el.dataset.plan && ri === +el.dataset.i;
+        if (same) r.videos = [...(r.videos || []), video];
+      });
       await saveActive();
     }
     toast('Video link saved');
     render();
   },
   'remove-video': async (el) => {
-    const p = planById(el.dataset.plan);
-    const d = p?.drills[+el.dataset.i];
-    if (!d || !confirm('Remove this video link?')) return;
-    d.videos.splice(+el.dataset.v, 1);
-    await db.put('plans', p);
+    const src = videoSource(el);
+    if (!src || !confirm('Remove this video link?')) return;
+    src.drill.videos.splice(+el.dataset.v, 1);
+    await src.save();
+    render();
+  },
+  'plans-view': (el) => { state.plansView = el.dataset.v; state.editDrill = null; render(); scrollTo(0, 0); },
+  'new-drill': () => { state.editDrill = 'new'; render(); scrollTo(0, 0); $('#df-name')?.focus(); },
+  'edit-drill': (el) => { state.editDrill = el.dataset.id; render(); scrollTo(0, 0); },
+  'cancel-drill': () => { state.editDrill = null; render(); },
+  'save-drill': async () => {
+    const val = (sel) => $(sel)?.value.trim() ?? '';
+    const name = val('#df-name');
+    if (!name) return toast('Give the drill a name', true);
+    const editing = state.editDrill === 'new' ? null : state.library.find((d) => d.id === state.editDrill);
+    if (state.library.some((d) => d.name.toLowerCase() === name.toLowerCase() && d.id !== editing?.id)) {
+      return toast('A drill with that name is already in your library', true);
+    }
+    let videos = editing?.videos || [];
+    const videoInput = val('#df-video');
+    if (videoInput) {
+      const url = safeUrl(videoInput);
+      if (!url) return toast('The video link should start with https://', true);
+      videos = [{ title: '', url }];
+    }
+    const drill = {
+      id: editing?.id || uid(),
+      name,
+      category: val('#df-category'),
+      durationMin: num(val('#df-duration')),
+      reps: num(val('#df-reps')),
+      target: val('#df-target'),
+      instructions: val('#df-instructions'),
+      videos,
+      addedAt: editing?.addedAt || new Date().toISOString(),
+    };
+    await db.put('library', drill);
+    await loadAll();
+    state.editDrill = null;
+    state.openDrill = drill.id;
+    render();
+    toast('Drill saved');
+  },
+  'delete-drill': async (el) => {
+    const d = state.library.find((x) => x.id === el.dataset.id);
+    if (!d || !confirm(`Delete "${d.name}" from your library? Past sessions are kept.`)) return;
+    await db.delete('library', d.id);
+    state.libSelected.delete(d.id);
+    await loadAll();
+    render();
+  },
+  'toggle-drill': (el) => { state.openDrill = state.openDrill === el.dataset.id ? null : el.dataset.id; render(); },
+  'start-drill': (el) => startLibrarySession([el.dataset.id]),
+  'start-selected': async () => {
+    await startLibrarySession([...state.libSelected]);
+    if (state.active?.planId === 'library') state.libSelected.clear();
+  },
+  'clear-selected': () => { state.libSelected.clear(); render(); },
+  'save-to-library': async (el) => {
+    const d = planById(el.dataset.plan)?.drills[+el.dataset.i];
+    if (!d) return;
+    await addToLibrary([d]);
+    toast(`Added “${d.name}” to your drill library`);
     render();
   },
   finish: finishSession,
@@ -1059,6 +1293,13 @@ function bindEvents() {
   });
   document.addEventListener('input', (e) => {
     const field = e.target.dataset.field;
+    if (field === 'lib-filter') {
+      // Filter in place so the search box keeps focus while typing
+      state.libFilter = e.target.value;
+      const q = state.libFilter.toLowerCase();
+      document.querySelectorAll('.lib-item').forEach((el) => { el.hidden = !el.dataset.search.includes(q); });
+      return;
+    }
     if (!field || !state.active) return;
     if (field === 'drill-notes') currentResult()[notesKey(playerOf())] = e.target.value;
     if (field === 'session-notes') state.active.notes = e.target.value;
@@ -1066,6 +1307,12 @@ function bindEvents() {
   });
   document.addEventListener('change', (e) => {
     if (e.target.dataset.field === 'stats-player') { state.statsPlayer = e.target.value; render(); }
+    if (e.target.dataset.field === 'lib-select') {
+      // Re-adding moves a drill to the end, so the run order follows the order you tick
+      if (e.target.checked) state.libSelected.add(e.target.value);
+      else state.libSelected.delete(e.target.value);
+      render();
+    }
     if (e.target.dataset.field === 'rotate' && state.active) {
       state.active.rotateMin = +e.target.value;
       saveActive();

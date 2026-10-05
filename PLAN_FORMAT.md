@@ -44,6 +44,16 @@ For several plans at once, wrap them as {"plans": [ ... ]}.
 
 A single file can hold one plan, `{"plans": [...]}`, or a list of plans `[...]`. The importer also accepts common alternative field names (`title`, `minutes`, `goal`, `description`, …), so small variations in Claude's output still import.
 
+## Individual drills (drill library)
+
+In **Plans → Drill library → Import**, any file's drills are added to your library instead of creating a plan. That includes a plan file, a multi-session program, or the CSV format below. A file holding just drills works too:
+
+```json
+{ "drills": [ { "name": "Wall volleys", "category": "Volleys", "durationMin": 3, "reps": 100, "target": "50 in a row", "instructions": "…" } ] }
+```
+
+A single drill object (`{ "name": "…", … }`) or a bare list `[ {…}, {…} ]` also works. A drill with the same name as one already in your library updates that drill, and its saved video links are kept.
+
 ## Multi-session programs
 
 Multi-week programs with several session types also import. Each entry in `sessions` becomes its own plan:
