@@ -172,6 +172,10 @@ textarea {
 }
 .link.danger { color: var(--bad); text-decoration: none; }
 
+.builtin-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--line); }
+.builtin-row p { margin: 2px 0 0; }
+.builtin-row .btn { flex: 0 0 auto; }
+
 .subtabs { margin-bottom: 14px; }
 .subtabs button { flex-direction: row; justify-content: center; min-height: 40px; }
 

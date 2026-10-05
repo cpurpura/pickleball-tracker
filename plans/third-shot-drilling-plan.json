@@ -1,0 +1,211 @@
+{
+  "schema_version": "1.0",
+  "plan": {
+    "id": "third-shot-drops-drives",
+    "name": "Third Shot Drops & Drives",
+    "focus": "third_shot",
+    "duration_weeks": 4,
+    "sessions_per_week": 2,
+    "session_duration_minutes": 120,
+    "partner_required": true,
+    "role_rotation_minutes": 5,
+    "notes": "Partner splits time 50/50 by rotating roles within each block, not by alternating blocks."
+  },
+  "scoring": {
+    "unit": "makes_out_of",
+    "attempts_per_set": 10,
+    "scored_blocks": ["warmup_excluded"],
+    "description": "Record makes out of 10 for every block with a goal value. Blocks with goal null are unscored."
+  },
+  "sessions": [
+    {
+      "id": "session_a",
+      "label": "Session A — Drops",
+      "duration_minutes": 120,
+      "primary_skill": "third_shot_drop",
+      "blocks": [
+        {
+          "order": 1,
+          "id": "a_warmup",
+          "name": "Warmup",
+          "duration_minutes": 15,
+          "scored": false,
+          "goal": null,
+          "description": "Crosscourt and straight dinks, then five minutes of mid-court resets. Partner feeds medium pace at your feet from the kitchen; you absorb into the NVZ.",
+          "tags": ["dinks", "resets", "warmup"]
+        },
+        {
+          "order": 2,
+          "id": "a_stationary_drops",
+          "name": "Stationary drops",
+          "duration_minutes": 25,
+          "scored": true,
+          "goal": 7,
+          "description": "Partner feeds a consistent ball from the kitchen; you drop crosscourt from the baseline. Switch every 20 balls.",
+          "coaching_point": "Target is the kitchen, but apex is the real measure — the ball should peak on your side of the net.",
+          "tags": ["drop", "feed", "crosscourt"]
+        },
+        {
+          "order": 3,
+          "id": "a_drop_off_return",
+          "name": "Drop off a real return",
+          "duration_minutes": 25,
+          "scored": true,
+          "goal": 6,
+          "description": "Serve for real. Partner returns deep, you drop the third.",
+          "coaching_point": "A deep return is what breaks this shot in a game. Returns must push you behind the baseline.",
+          "tags": ["drop", "serve", "deep_return"]
+        },
+        {
+          "order": 4,
+          "id": "a_drop_and_advance",
+          "name": "Drop and advance",
+          "duration_minutes": 25,
+          "scored": true,
+          "goal": 6,
+          "description": "Same as the previous block, then move in, reset whatever comes back, and play out the point.",
+          "coaching_point": "The drop is the first shot of a transition, not a standalone skill.",
+          "tags": ["drop", "transition", "reset"]
+        },
+        {
+          "order": 5,
+          "id": "a_pressure_games",
+          "name": "Pressure games",
+          "duration_minutes": 20,
+          "scored": false,
+          "goal": null,
+          "description": "Third-shot-only games to 7. Serving team starts at the baseline, receiving team at the kitchen.",
+          "tags": ["live_play", "pressure"]
+        }
+      ]
+    },
+    {
+      "id": "session_b",
+      "label": "Session B — Drives and shot selection",
+      "duration_minutes": 120,
+      "primary_skill": "third_shot_drive",
+      "blocks": [
+        {
+          "order": 1,
+          "id": "b_warmup",
+          "name": "Warmup",
+          "duration_minutes": 15,
+          "scored": false,
+          "goal": null,
+          "description": "Same as Session A.",
+          "tags": ["dinks", "resets", "warmup"]
+        },
+        {
+          "order": 2,
+          "id": "b_drive_mechanics",
+          "name": "Drive mechanics",
+          "duration_minutes": 20,
+          "scored": true,
+          "goal": 7,
+          "description": "Partner feeds from the kitchen; you drive at their hip or paddle-side shoulder. Low to high, contact out in front, clearing the net by two feet or less.",
+          "coaching_point": "A drive is a setup, not a winner.",
+          "tags": ["drive", "feed", "mechanics"]
+        },
+        {
+          "order": 3,
+          "id": "b_drive_then_fifth_drop",
+          "name": "Drive then fifth-shot drop",
+          "duration_minutes": 30,
+          "scored": true,
+          "goal": 6,
+          "description": "You drive the third, partner blocks it back, you drop the fifth and move in.",
+          "coaching_point": "Highest-value block in the week. Most players drive well, then never recover the kitchen.",
+          "tags": ["drive", "drop", "fifth_shot", "transition"]
+        },
+        {
+          "order": 4,
+          "id": "b_read_and_choose",
+          "name": "Read and choose",
+          "duration_minutes": 30,
+          "scored": true,
+          "goal": 8,
+          "goal_unit": "correct_calls_out_of_10",
+          "description": "Partner varies return depth randomly. Deep means drop, short or medium means drive. Call the shot out loud the instant you read the bounce.",
+          "coaching_point": "Scores decisions, not execution. A correct call executed poorly still counts as correct.",
+          "tags": ["shot_selection", "decision_making"]
+        },
+        {
+          "order": 5,
+          "id": "b_live_points",
+          "name": "Live points",
+          "duration_minutes": 25,
+          "scored": false,
+          "goal": null,
+          "description": "Full points to 11, no restrictions, starting from the serve.",
+          "tags": ["live_play"]
+        }
+      ]
+    }
+  ],
+  "progression": [
+    {
+      "weeks": [1, 2],
+      "phase": "build_mechanics",
+      "description": "Consistent feeds, predictable returns, generous targets. Anywhere in the kitchen counts as a made drop.",
+      "drop_target": "anywhere_in_kitchen",
+      "drive_target": "below_net_plus_2ft",
+      "partner_variation": "none"
+    },
+    {
+      "weeks": [3, 4],
+      "phase": "tighten_targets",
+      "description": "Shrink the targets and add variation. Partner occasionally poaches in the later blocks so you hit to a place rather than at a person.",
+      "drop_target": "front_half_of_kitchen",
+      "drive_target": "below_blocker_shoulder",
+      "partner_variation": "vary_pace_and_depth"
+    }
+  ],
+  "regression_rule": {
+    "trigger": "block_score_below",
+    "threshold": 5,
+    "action": "Return to the easier target for one session. Grinding at a target you cannot hit teaches the miss."
+  },
+  "exit_criteria": [
+    "Hitting week 3-4 targets consistently: drops 7/10 to the front half of the kitchen, correct calls 8/10",
+    "Third shot is no longer the shot losing points in live play",
+    "No movement in the log across three consecutive sessions (change the drill, get video, or get a lesson)"
+  ],
+  "supporting_habits": [
+    {
+      "id": "video_review",
+      "frequency": "every_session",
+      "description": "Film one rep set from the sideline — Session A block 2 or Session B block 2. Most drop faults are a late paddle face or contact behind the hip, neither of which you can feel while hitting."
+    },
+    {
+      "id": "rec_play",
+      "frequency": "1-2x_per_week",
+      "description": "Play live games between drill sessions. Drilling without live play builds a shot that works against a cooperative feed."
+    }
+  ],
+  "fault_checklist": {
+    "drop": [
+      "Contact behind the hip, forcing a wrist lift instead of a shoulder lift",
+      "Wrist flicking at the ball rather than a quiet paddle and lifting arm",
+      "Stopping in no-man's land instead of continuing to the kitchen line",
+      "Aiming at the net tape rather than the apex on your own side"
+    ],
+    "drive": [
+      "Swinging for a winner instead of a setup",
+      "Driving only at the paddle-side elbow; mix in hip and feet",
+      "Driving a ball that has dropped below net height",
+      "Admiring it instead of splitting to the transition zone for the fifth"
+    ]
+  },
+  "log_template": {
+    "fields": [
+      { "name": "date", "type": "date" },
+      { "name": "week", "type": "integer" },
+      { "name": "session_id", "type": "string", "enum": ["session_a", "session_b"] },
+      { "name": "block_id", "type": "string" },
+      { "name": "makes", "type": "integer", "min": 0, "max": 10 },
+      { "name": "attempts", "type": "integer", "default": 10 },
+      { "name": "notes", "type": "string", "hint": "What changed, not how it felt. e.g. 'partner started hitting returns deeper'" }
+    ],
+    "entries": []
+  }
+}

@@ -690,6 +690,12 @@ async function requestPersistence() {
   if (navigator.storage?.persist) state.persisted = await navigator.storage.persist();
 }
 
+// Plans shipped with the app (cached for offline use by sw.js); name must match the imported plan name's start
+const BUILT_IN_PLANS = [
+  { file: 'plans/third-shot-drilling-plan.json', name: 'Third Shot Drops & Drives', about: '4-week program · Session A (drops) and Session B (drives and shot selection)' },
+  { file: 'sample-plan.json', name: 'Soft Game Fundamentals', about: 'Single 60-minute session: dinks, drops and resets' },
+];
+
 // ---------- Views ----------
 const stars = (value, scope) => `<div class="stars" role="group" aria-label="Rating">${[1, 2, 3, 4, 5].map((n) =>
   `<button class="star ${n <= value ? 'on' : ''}" data-action="rate" data-scope="${scope}" data-v="${n}" aria-label="${n} of 5">★</button>`).join('')}</div>`;
@@ -872,9 +878,18 @@ const views = {
       </div>
       ${list || `<div class="empty">
         <p>No plans yet.</p>
-        <p class="muted small">Ask Claude for a drill plan (see the <b>Data</b> tab for a ready-made prompt), save it as a <code>.json</code> file, then tap <b>Import</b>.</p>
-        <button class="btn" data-action="load-sample">Load a sample plan</button>
-      </div>`}`;
+        <p class="muted small">Add a built-in plan below, or ask Claude for a drill plan (see the <b>Data</b> tab for a ready-made prompt), save it as a <code>.json</code> file, then tap <b>Import</b>.</p>
+      </div>`}
+      <section class="card">
+        <h3>Built-in plans</h3>
+        ${BUILT_IN_PLANS.map((b) => {
+          const loaded = state.plans.some((p) => p.name.startsWith(b.name));
+          return `<div class="builtin-row">
+            <div><b>${esc(b.name)}</b><p class="muted small">${esc(b.about)}</p></div>
+            <button class="btn ${loaded ? '' : 'primary'}" data-action="load-builtin" data-file="${esc(b.file)}">${loaded ? 'Reload' : '＋ Add'}</button>
+          </div>`;
+        }).join('')}
+      </section>`;
   },
 
   session() {
@@ -1119,9 +1134,14 @@ function render() {
 const actions = {
   tab: (el) => { state.tab = el.dataset.tab; render(); scrollTo(0, 0); },
   import: (el) => { state.importTarget = el.dataset.target || 'plans'; $('#fileInput').click(); },
-  'load-sample': async () => {
-    const res = await fetch('sample-plan.json');
-    await importText(await res.text(), 'sample-plan.json');
+  'load-builtin': async (el) => {
+    const file = el.dataset.file;
+    if (!BUILT_IN_PLANS.some((b) => b.file === file)) return;
+    const res = await fetch(file);
+    if (!res.ok) throw new Error('Couldn’t load that plan. Check your connection and try again.');
+    state.importTarget = 'plans';
+    // Reloading replaces the plan, keeping any video links you added
+    await importText(await res.text(), file.split('/').pop());
   },
   'toggle-plan': (el) => { state.openPlan = state.openPlan === el.dataset.id ? null : el.dataset.id; render(); },
   'delete-plan': async (el) => {
