@@ -1,0 +1,45 @@
+# Pickleball Drill Tracker
+
+A phone-first web app for running pickleball drill sessions on the court and saving the results to your PC.
+
+- **Import drill plans** (JSON from Claude, or CSV) from your phone.
+- **Run a session:** drill-by-drill view with a countdown timer (beeps/vibrates at zero), big ✓ Made / ✗ Miss counters, a 1–5 rating and notes for each drill. The screen stays awake during a session.
+- **Works offline.** Everything is stored on the phone (IndexedDB). An unfinished session survives closing the app.
+- **History:** past sessions plus per-drill success % trends.
+- **Export:** a CSV that opens in Excel (one row per drill) and a full JSON backup that can be re-imported.
+
+No frameworks, no build step: just `index.html`, `app.js`, `styles.css`, plus `sw.js` and `manifest.webmanifest` so it installs and works offline.
+
+## Run it on your PC
+
+```bash
+python -m http.server 8090
+```
+
+Then open http://localhost:8090. To get a phone-sized view in Chrome, press F12 and turn on device mode.
+
+## Put it on your Android phone
+
+Offline mode and installing need **HTTPS**, so host the app online. The easiest free option is **GitHub Pages**:
+
+1. Create a GitHub repo (e.g. `pickleball-tracker`) and push this folder to it.
+2. In the repo, go to **Settings → Pages**, set the source to the `main` branch and the `/ (root)` folder, then save.
+3. On your phone, open `https://<your-username>.github.io/pickleball-tracker/` in Chrome.
+4. Open the Chrome menu (⋮) and choose **Add to Home screen** (or **Install app**).
+
+Your data stays on the phone. It is **not** uploaded to GitHub.
+
+**Updating the app:** edit the files, bump `CACHE` in `sw.js` (e.g. `v1` → `v2`), and push. The phone picks up the new version the next time you open the app (sometimes it takes two launches).
+
+## Drill plan format
+
+See [PLAN_FORMAT.md](PLAN_FORMAT.md) for the JSON and CSV formats and a ready-made prompt for Claude. The same prompt is also in the app under **Data → Get plans from Claude**.
+
+## Getting results onto your PC
+
+In the app, open **Data** and choose an export:
+
+- **Share…** opens the Android share sheet. Send the file to Gmail, Google Drive, or Quick Share to your PC.
+- **Download** saves the file to the phone's `Downloads` folder. Copy it over USB.
+
+Export a **Full backup (JSON)** now and then. If the phone is lost or Chrome's data is cleared, that backup is your copy.

@@ -1,0 +1,54 @@
+{
+  "name": "Soft Game Fundamentals (60 min)",
+  "description": "Builds control at the kitchen line: dinks, drops and resets, finishing with live play.",
+  "drills": [
+    {
+      "name": "Warm-up dinks",
+      "category": "Warm-up",
+      "durationMin": 8,
+      "reps": 0,
+      "target": "Loose, relaxed contact; no pop-ups",
+      "instructions": "Straight-ahead dinks with a partner. Start slow, then gradually add movement."
+    },
+    {
+      "name": "Cross-court dinks",
+      "category": "Dinking",
+      "durationMin": 10,
+      "reps": 50,
+      "target": "80% land in the kitchen and stay low",
+      "instructions": "Dink diagonally. Paddle up and out front, lift from the legs, finish toward your target. Count a miss for anything that pops up or lands out of the kitchen."
+    },
+    {
+      "name": "Third-shot drops from the baseline",
+      "category": "Drops",
+      "durationMin": 12,
+      "reps": 30,
+      "target": "7 of 10 land in the kitchen",
+      "instructions": "Partner at the kitchen feeds deep. Drop with a smooth low-to-high swing and aim for the apex on your side of the net."
+    },
+    {
+      "name": "Transition-zone resets",
+      "category": "Resets",
+      "durationMin": 10,
+      "reps": 30,
+      "target": "Reset lands in the kitchen without popping up",
+      "instructions": "Stand mid-court. Partner drives medium-pace balls at you. Soften your grip and absorb the pace back into the kitchen."
+    },
+    {
+      "name": "Drop, then move up",
+      "category": "Footwork",
+      "durationMin": 10,
+      "reps": 20,
+      "target": "Split-step before every partner contact",
+      "instructions": "Hit a drop, take 2–3 steps forward, split-step, then hit a reset. Repeat until you reach the kitchen line."
+    },
+    {
+      "name": "Skinny singles (soft game only)",
+      "category": "Live play",
+      "durationMin": 10,
+      "reps": 0,
+      "target": "Win the point by patience, not power",
+      "instructions": "Half-court games to 11, below-the-waist shots only. Record points won as Made and points lost as Miss."
+    }
+  ]
+}
