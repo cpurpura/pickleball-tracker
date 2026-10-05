@@ -195,6 +195,69 @@ function csvPlans(text, fallbackName) {
   return [...groups.values()].map((p) => normPlan(p, fallbackName));
 }
 
+const humanize = (s) => {
+  const t = str(s).replace(/_/g, ' ');
+  return t.charAt(0).toUpperCase() + t.slice(1);
+};
+
+// Plan-level notes for a multi-session program: schedule, progression, regression rule
+function programNotes(data) {
+  const m = data.plan || {};
+  const lines = [];
+  const schedule = [
+    m.duration_weeks && `${m.duration_weeks} weeks`,
+    m.sessions_per_week && `${m.sessions_per_week}× per week`,
+    m.session_duration_minutes && `${m.session_duration_minutes} min sessions`,
+    m.role_rotation_minutes && `rotate roles every ${m.role_rotation_minutes} min`,
+  ].filter(Boolean);
+  if (schedule.length) lines.push(schedule.join(' · '));
+  if (m.notes || m.description) lines.push(str(m.notes || m.description));
+  for (const p of data.progression || []) {
+    const weeks = Array.isArray(p.weeks) ? p.weeks.join('–') : p.weeks;
+    lines.push(`Weeks ${weeks}: ${str(p.description)}`);
+  }
+  const rr = data.regression_rule;
+  if (rr?.action) lines.push(`If a block scores below ${rr.threshold}: ${str(rr.action)}`);
+  return lines.join('\n\n');
+}
+
+// { plan: {...}, scoring: {...}, sessions: [{ label, blocks: [...] }] } → one app plan per session
+function programPlans(data, fallbackName) {
+  const meta = data.plan || {};
+  const programName = str(meta.name || data.name) || fallbackName;
+  const perSet = num(data.scoring?.attempts_per_set) || 10;
+  const faults = data.fault_checklist || {};
+  const description = programNotes(data);
+
+  return data.sessions.map((s, si) => {
+    const blocks = [...(s.blocks || s.drills)].sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+    return normPlan({
+      id: meta.id && s.id ? `${meta.id}-${s.id}` : undefined,
+      name: `${programName} — ${str(s.label || s.name) || `Session ${si + 1}`}`,
+      description,
+      drills: blocks.map((b) => {
+        const tags = b.tags || [];
+        const unit = b.goal_unit ? humanize(String(b.goal_unit).replace(/_?out_of_\d+$/, '')).toLowerCase() : 'makes';
+        const faultList = Object.entries(faults)
+          .filter(([k]) => tags.includes(k))
+          .flatMap(([, list]) => list);
+        return {
+          name: b.name,
+          category: b.category || (tags.includes('warmup') ? 'Warm-up' : humanize(tags[0])),
+          durationMin: b.duration_minutes ?? b.durationMin,
+          target: b.goal != null ? `${b.goal}/${perSet} ${unit}` : b.target || (b.scored === false ? 'Unscored' : ''),
+          instructions: [
+            b.description || b.instructions,
+            b.coaching_point && `Coaching point: ${b.coaching_point}`,
+            faultList.length && `Common faults:\n${faultList.map((f) => `• ${f}`).join('\n')}`,
+          ].filter(Boolean).join('\n\n'),
+          videos: b.videos,
+        };
+      }),
+    }, fallbackName);
+  });
+}
+
 function parseImport(text, filename) {
   text = text.replace(/^﻿/, '').trim();
   const fallbackName = filename.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ');
@@ -203,6 +266,9 @@ function parseImport(text, filename) {
   const data = JSON.parse(text);
   if (data?.type === 'pickleball-drill-backup') {
     return { plans: (data.plans || []).map((p) => normPlan(p, fallbackName)), sessions: data.sessions || [] };
+  }
+  if (Array.isArray(data?.sessions) && data.sessions.some((s) => Array.isArray(s?.blocks || s?.drills))) {
+    return { plans: programPlans(data, fallbackName), sessions: [] };
   }
   let rawPlans;
   if (Array.isArray(data)) {
@@ -551,11 +617,11 @@ const views = {
           <span class="chev">${open ? '▾' : '▸'}</span>
         </button>
         ${open ? `<div class="card-body">
-          ${p.description ? `<p>${esc(p.description)}</p>` : ''}
+          ${p.description ? `<p class="note">${esc(p.description)}</p>` : ''}
           <ol class="drill-list">${p.drills.map((d, i) => `<li>
             <strong>${esc(d.name)}</strong>${drillMeta(d)}
             ${d.target ? `<p class="small"><b>Target:</b> ${esc(d.target)}</p>` : ''}
-            ${d.instructions ? `<p class="muted small">${esc(d.instructions)}</p>` : ''}
+            ${d.instructions ? `<p class="muted small note">${esc(d.instructions)}</p>` : ''}
             ${videoLinks(d, p.id, i, true)}
           </li>`).join('')}</ol>
           <div class="row">
@@ -608,7 +674,7 @@ const views = {
         ${r.category ? `<p class="eyebrow">${esc(r.category)}</p>` : ''}
         <h2>${esc(r.name)}</h2>
         ${r.target ? `<p><b>Target:</b> ${esc(r.target)}</p>` : ''}
-        ${r.instructions ? `<p class="muted">${esc(r.instructions)}</p>` : ''}
+        ${r.instructions ? `<p class="muted note">${esc(r.instructions)}</p>` : ''}
         <details class="videos"><summary>🎬 Videos${r.videos.length ? ` (${r.videos.length})` : ''}</summary>
           ${videoLinks(r, a.planId, a.current)}
         </details>

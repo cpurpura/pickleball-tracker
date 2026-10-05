@@ -44,6 +44,37 @@ For several plans at once, wrap them as {"plans": [ ... ]}.
 
 A single file can hold one plan, `{"plans": [...]}`, or a list of plans `[...]`. The importer also accepts common alternative field names (`title`, `minutes`, `goal`, `description`, …), so small variations in Claude's output still import.
 
+## Multi-session programs
+
+Multi-week programs with several session types also import. Each entry in `sessions` becomes its own plan:
+
+```json
+{
+  "plan": { "id": "third-shot", "name": "Third Shot Drops & Drives", "duration_weeks": 4, "sessions_per_week": 2, "notes": "…" },
+  "scoring": { "attempts_per_set": 10 },
+  "sessions": [
+    {
+      "id": "session_a",
+      "label": "Session A — Drops",
+      "blocks": [
+        {
+          "order": 2, "name": "Stationary drops", "duration_minutes": 25, "goal": 7,
+          "description": "…", "coaching_point": "…", "tags": ["drop", "feed"]
+        }
+      ]
+    }
+  ],
+  "progression": [{ "weeks": [1, 2], "description": "…" }],
+  "regression_rule": { "threshold": 5, "action": "…" },
+  "fault_checklist": { "drop": ["…"], "drive": ["…"] }
+}
+```
+
+- Blocks become drills, sorted by `order`.
+- `goal` combined with `attempts_per_set` becomes the target, e.g. "7/10 makes". Use `goal_unit` (e.g. `correct_calls_out_of_10`) to change the wording. Blocks with `"goal": null` show "Unscored".
+- `coaching_point` and any `fault_checklist` entries whose key matches one of the block's `tags` are added to the drill instructions.
+- `progression`, `regression_rule` and the schedule from `plan` appear in the plan description.
+
 ## CSV
 
 Use one row per drill. Add a `Plan` column to put several plans in one file. Without it, the file name becomes the plan name.
