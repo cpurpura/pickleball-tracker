@@ -88,6 +88,10 @@ function upgradeActive(a) {
   if (!a) return null;
   a.partner ??= '';
   a.player ??= 'me';
+  a.week ??= 1;
+  a.programKey ??= a.planId;
+  a.programWeeks ??= 0;
+  a.rotateMin ??= 0;
   for (const r of a.results) {
     r.partnerHits ??= [];
     r.partnerRating ??= 0;
@@ -157,6 +161,10 @@ function normPlan(raw, fallbackName) {
     name: str(pick(p, PLAN_KEYS.name)) || fallbackName,
     description: str(pick(p, PLAN_KEYS.description)),
     drills,
+    // Multi-week program info (shared by all session plans from the same program file)
+    program: raw.program ?? (num(pick(p, ['rolerotationminutes', 'rotationmin'])) || num(pick(p, ['durationweeks', 'weeks']))
+      ? { id: raw.id, weeks: num(pick(p, ['durationweeks', 'weeks'])), rotationMin: num(pick(p, ['rolerotationminutes', 'rotationmin'])) }
+      : undefined),
     importedAt: new Date().toISOString(),
   };
 }
@@ -235,6 +243,12 @@ function programPlans(data, fallbackName) {
       id: meta.id && s.id ? `${meta.id}-${s.id}` : undefined,
       name: `${programName} — ${str(s.label || s.name) || `Session ${si + 1}`}`,
       description,
+      program: {
+        id: meta.id || programName,
+        name: programName,
+        weeks: num(meta.duration_weeks),
+        rotationMin: num(meta.role_rotation_minutes),
+      },
       drills: blocks.map((b) => {
         const tags = b.tags || [];
         const unit = b.goal_unit ? humanize(String(b.goal_unit).replace(/_?out_of_\d+$/, '')).toLowerCase() : 'makes';
@@ -305,7 +319,7 @@ async function importText(text, filename) {
 }
 
 // ---------- Export ----------
-const CSV_COLS = ['session_date', 'start_time', 'plan', 'drill_no', 'drill', 'category', 'target',
+const CSV_COLS = ['session_date', 'start_time', 'week', 'plan', 'drill_no', 'drill', 'category', 'target',
   'planned_min', 'actual_min', 'attempts', 'made', 'success_pct', 'drill_rating', 'drill_notes',
   'partner', 'partner_attempts', 'partner_made', 'partner_success_pct', 'partner_rating', 'partner_notes',
   'session_rating', 'session_notes', 'session_id'];
@@ -316,7 +330,7 @@ function sessionsToCSV(sessions) {
   for (const s of [...sessions].reverse()) {
     const d = new Date(s.startedAt);
     s.results.forEach((r, i) => rows.push([
-      localDate(d), localTime(d), s.planName, i + 1, r.name, r.category, r.target,
+      localDate(d), localTime(d), s.week ?? '', s.planName, i + 1, r.name, r.category, r.target,
       r.durationMin || '', (r.elapsedSec / 60).toFixed(1), r.attempts, r.made,
       pct(r.made, r.attempts) ?? '', r.rating || '', r.notes,
       s.partner || '',
@@ -369,12 +383,29 @@ async function exportFile(kind, mode) {
 }
 
 // ---------- Session flow ----------
+const DAY_MS = 86_400_000;
+const startOfDay = (t) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return d.getTime(); };
+
+// Program week for a new session: counted from your most recent session in the same program
+// (Session A and B plans from one program share a key), so a corrected week carries forward.
+function suggestWeek(programKey, maxWeeks) {
+  const last = state.sessions.find((s) => (s.programKey || s.planId) === programKey && s.week);
+  if (!last) return 1;
+  const programStart = startOfDay(last.startedAt) - (last.week - 1) * 7 * DAY_MS;
+  const week = Math.floor(Math.round((startOfDay(Date.now()) - programStart) / DAY_MS) / 7) + 1;
+  return maxWeeks ? Math.min(week, maxWeeks) : week;
+}
+
 async function startSession(planId) {
   if (state.active && !confirm('A session is already in progress. Discard it and start a new one?')) return;
   const p = planById(planId);
+  const programKey = p.program?.id || p.id;
+  const programWeeks = p.program?.weeks || 0;
   state.active = {
     id: uid(), planId: p.id, planName: p.name, startedAt: new Date().toISOString(),
     current: 0, timerStartedAt: null, rating: 0, notes: '', partner: '', player: 'me',
+    programKey, programWeeks, week: suggestWeek(programKey, programWeeks),
+    rotateMin: p.program?.rotationMin || 0,
     results: p.drills.map((d) => ({
       ...d, videos: [...(d.videos || [])], hits: [], rating: 0, notes: '',
       partnerHits: [], partnerRating: 0, partnerNotes: '', elapsedSec: 0, done: false,
@@ -424,7 +455,7 @@ async function finishSession() {
 
 // ---------- Timer, alarm, screen wake lock ----------
 let audioCtx;
-let lastLeft = null;   // seconds left at the previous tick; cues fire when a threshold is crossed
+let lastElapsed = null; // drill seconds at the previous tick; cues fire when a threshold is crossed
 let alarmTimer = null; // interval that repeats the time-up alarm until stopped
 let alarmStarted = 0;
 const ALARM_MAX_MS = 60_000;
@@ -448,7 +479,7 @@ function pauseTimer() {
   const r = currentResult();
   if (a?.timerStartedAt && r) r.elapsedSec = elapsed(r);
   if (a) a.timerStartedAt = null;
-  lastLeft = null;
+  lastElapsed = null;
   stopAlarm();
 }
 
@@ -457,7 +488,7 @@ function toggleTimer() {
   audioCtx ??= new (window.AudioContext || window.webkitAudioContext)(); // must be created from a tap
   audioCtx.resume?.();
   if (a.timerStartedAt) pauseTimer();
-  else { a.timerStartedAt = Date.now(); lastLeft = null; }
+  else { a.timerStartedAt = Date.now(); lastElapsed = null; }
   saveActive();
   render();
 }
@@ -465,7 +496,7 @@ function toggleTimer() {
 function resetTimer() {
   state.active.timerStartedAt = null;
   currentResult().elapsedSec = 0;
-  lastLeft = null;
+  lastElapsed = null;
   stopAlarm();
   saveActive();
   render();
@@ -525,25 +556,57 @@ function stopAlarm() {
   if (bar) bar.hidden = true;
 }
 
-// Fire each cue once, when the time left crosses its threshold while the timer runs
-function timerCues(r, left) {
-  if (!state.active.timerStartedAt || left === Infinity) { lastLeft = null; return; }
-  const prev = lastLeft;
-  lastLeft = left;
+// Rising three-note chime: switch hitter/feeder roles
+function switchRoles() {
+  tone(523, 0, 0.18, { vol: 0.5 });
+  tone(659, 0.2, 0.18, { vol: 0.5 });
+  tone(784, 0.4, 0.35, { vol: 0.5 });
+  navigator.vibrate?.([100, 80, 100, 80, 250]);
+  const a = state.active;
+  if (a.partner) {
+    // Flip who taps count for, since the other player is now hitting
+    a.player = a.player === 'me' ? 'partner' : 'me';
+    saveActive();
+    render();
+    toast(`🔁 Switch roles · now logging for ${a.player === 'me' ? 'you' : a.partner}`);
+  } else {
+    toast('🔁 Switch roles');
+  }
+}
+
+// Fire each cue once, when the drill time crosses its threshold while the timer runs
+function timerCues(r) {
+  const a = state.active;
+  if (!a.timerStartedAt) { lastElapsed = null; return; }
+  const e = elapsed(r);
+  const prev = lastElapsed;
+  lastElapsed = e;
   if (prev === null) return;
-  const crossed = (t) => prev > t && left <= t;
-  if (crossed(0)) startAlarm();
-  else if ([1, 2, 3].some(crossed)) countdownTick();
-  else if (r.durationMin * 60 > 90 && crossed(60)) oneMinuteWarning();
+  const total = r.durationMin * 60;
+  if (total) {
+    const crossed = (leftAt) => total - prev > leftAt && total - e <= leftAt;
+    if (crossed(0)) return startAlarm();
+    if ([1, 2, 3].some(crossed)) return countdownTick();
+    if (total > 90 && crossed(60)) return oneMinuteWarning();
+  }
+  const rot = a.rotateMin * 60;
+  const nearEnd = total && total - e < 10; // the time-up alarm covers the end of the drill
+  if (rot > 0 && Math.floor(e / rot) > Math.floor(prev / rot) && !nearEnd) switchRoles();
 }
 
 function tick() {
   const r = currentResult();
   if (!r) return;
   const c = clockState(r);
-  timerCues(r, c.left);
+  timerCues(r);
   const el = document.getElementById('clock');
   if (el) { el.textContent = c.text; el.classList.toggle('over', c.over); }
+  const info = document.getElementById('rotateInfo');
+  if (info) {
+    const rot = state.active.rotateMin * 60;
+    info.textContent = rot && state.active.timerStartedAt
+      ? `Next switch in ${clock(Math.ceil(rot - (elapsed(r) % rot)))}` : '';
+  }
 }
 
 let wakeLock = null;
@@ -613,7 +676,7 @@ const views = {
       const open = state.openPlan === p.id;
       return `<article class="card">
         <button class="card-head" data-action="toggle-plan" data-id="${p.id}" aria-expanded="${open}">
-          <div><h3>${esc(p.name)}</h3><p class="muted small">${p.drills.length} drill${p.drills.length === 1 ? '' : 's'}${mins ? ` · ${mins} min` : ''}</p></div>
+          <div><h3>${esc(p.name)}</h3><p class="muted small">${p.drills.length} drill${p.drills.length === 1 ? '' : 's'}${mins ? ` · ${mins} min` : ''}${p.program?.weeks ? ` · ${p.program.weeks}-week program` : ''}</p></div>
           <span class="chev">${open ? '▾' : '▸'}</span>
         </button>
         ${open ? `<div class="card-body">
@@ -657,7 +720,10 @@ const views = {
       `<button class="chip ${i === a.current ? 'on' : ''} ${r.done ? 'done' : ''}" data-action="goto" data-i="${i}" aria-label="Drill ${i + 1}">${i + 1}</button>`).join('')}
       <button class="chip ${a.current === a.results.length ? 'on' : ''}" data-action="goto" data-i="${a.results.length}" aria-label="Summary">✓</button></div>`;
     const head = `<div class="progress"><strong>${esc(a.planName)}</strong>
-      <span class="muted small">${a.current < a.results.length ? `Drill ${a.current + 1} of ${a.results.length}` : 'Summary'}</span></div>`;
+      <span class="muted small">${a.current < a.results.length ? `Drill ${a.current + 1} of ${a.results.length}` : 'Summary'}</span></div>
+      <p class="partner-line week-line">📅 Week <b>${a.week}</b>${a.programWeeks ? ` of ${a.programWeeks}` : ''}
+        <button class="link step" data-action="week" data-d="-1" aria-label="Previous week" ${a.week <= 1 ? 'disabled' : ''}>−</button>
+        <button class="link step" data-action="week" data-d="1" aria-label="Next week">＋</button></p>`;
 
     if (a.current === a.results.length) return head + chips + summaryView(a);
 
@@ -687,6 +753,12 @@ const views = {
           <button class="btn primary" data-action="timer-toggle">${a.timerStartedAt ? '⏸ Pause' : r.elapsedSec ? '▶ Resume' : '▶ Start'}</button>
           <button class="btn ghost" data-action="timer-reset">Reset</button>
         </div>
+        <div class="rotate">
+          <label for="rotateSel">🔁 Switch roles</label>
+          <select id="rotateSel" data-field="rotate">${[...new Set([0, 1, 2, 3, 4, 5, 6, 8, 10, a.rotateMin])].sort((x, y) => x - y)
+            .map((m) => `<option value="${m}" ${m === a.rotateMin ? 'selected' : ''}>${m ? `every ${m} min` : 'off'}</option>`).join('')}</select>
+        </div>
+        <p id="rotateInfo" class="muted small"></p>
       </div>
 
       <div class="card counter">
@@ -822,7 +894,7 @@ function sessionCard(s) {
   return `<article class="card">
     <button class="card-head" data-action="toggle-session" data-id="${s.id}" aria-expanded="${open}">
       <div><h3>${esc(s.planName)}${s.partner ? ` <span class="muted small">· with ${esc(s.partner)}</span>` : ''}</h3>
-        <p class="muted small">${fmtDate(s.startedAt)} · ${mins} min${attempts ? ` · ${pct(made, attempts)}% (${made}/${attempts})` : ''}
+        <p class="muted small">${s.week ? `Week ${s.week} · ` : ''}${fmtDate(s.startedAt)} · ${mins} min${attempts ? ` · ${pct(made, attempts)}% (${made}/${attempts})` : ''}
         <span class="gold">${starText(s.rating)}</span></p></div>
       <span class="chev">${open ? '▾' : '▸'}</span>
     </button>
@@ -911,6 +983,12 @@ const actions = {
     saveActive();
     render();
   },
+  week: (el) => {
+    const a = state.active;
+    a.week = Math.max(1, a.week + +el.dataset.d);
+    saveActive();
+    render();
+  },
   player: (el) => { state.active.player = el.dataset.v; saveActive(); render(); },
   'edit-partner': () => { state.editPartner = true; render(); $('#partnerName')?.focus(); },
   'save-partner': () => {
@@ -988,6 +1066,11 @@ function bindEvents() {
   });
   document.addEventListener('change', (e) => {
     if (e.target.dataset.field === 'stats-player') { state.statsPlayer = e.target.value; render(); }
+    if (e.target.dataset.field === 'rotate' && state.active) {
+      state.active.rotateMin = +e.target.value;
+      saveActive();
+      render();
+    }
   });
   document.addEventListener('keydown', (e) => {
     if (e.target.id === 'partnerName' && e.key === 'Enter') { e.preventDefault(); actions['save-partner'](); }

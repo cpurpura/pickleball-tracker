@@ -7,6 +7,7 @@ A phone-first web app for running pickleball drill sessions on the court and sav
 - **Import drill plans** (JSON from Claude, or CSV) from your phone.
 - **Run a session:** drill-by-drill view with a countdown timer (beeps/vibrates at zero), big ✓ Made / ✗ Miss counters, a 1–5 rating and notes for each drill. The screen stays awake during a session.
 - **Partner logging:** add your drill partner to a session and switch between **You** and **[Partner]** to log each person's made/miss, rating and notes. History shows progress for you or for any partner.
+- **Program weeks & role switching:** each session records its program week (suggested automatically, adjustable), and an optional chime every N minutes signals partners to switch roles. When you're logging a partner, it also flips who your taps count for.
 - **Reference videos:** every drill has a YouTube search link. You can also save your own video links (in the plan or during a session) or include them in imported plans.
 - **Works offline.** Everything is stored on the phone (IndexedDB). An unfinished session survives closing the app.
 - **History:** past sessions plus per-drill success % trends.

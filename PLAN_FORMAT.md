@@ -74,6 +74,10 @@ Multi-week programs with several session types also import. Each entry in `sessi
 - `goal` combined with `attempts_per_set` becomes the target, e.g. "7/10 makes". Use `goal_unit` (e.g. `correct_calls_out_of_10`) to change the wording. Blocks with `"goal": null` show "Unscored".
 - `coaching_point` and any `fault_checklist` entries whose key matches one of the block's `tags` are added to the drill instructions.
 - `progression`, `regression_rule` and the schedule from `plan` appear in the plan description.
+- `plan.duration_weeks` sets the program length for the session **week number** (e.g. "Week 2 of 4"). The week is shared across all of the program's sessions.
+- `plan.role_rotation_minutes` turns on the **switch-roles chime** at that interval. It can be changed or turned off for each session.
+
+A simple single plan can set these too, with top-level `"duration_weeks"` and `"role_rotation_minutes"` fields.
 
 ## CSV
 

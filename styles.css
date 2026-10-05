@@ -183,6 +183,16 @@ input:not([type]) { flex: 1; min-width: 0; }
 .row.tight > .btn { flex: 0 0 auto; }
 
 .partner-line { margin: 0 0 10px; color: var(--muted); font-size: .9rem; }
+.week-line { display: flex; align-items: center; gap: 4px; }
+.link.step {
+  min-width: 34px; min-height: 30px; margin-left: 4px; border: 1px solid var(--line); border-radius: 8px;
+  text-decoration: none; background: var(--surface);
+}
+.link.step:disabled { opacity: .35; }
+.rotate { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
+.rotate label { margin: 0; font-weight: 600; font-size: .9rem; }
+.rotate select { min-height: 38px; }
+#rotateInfo { min-height: 1.2em; margin: 4px 0 0; }
 .seg {
   display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 4px; margin-bottom: 10px;
   background: var(--bg); border: 1px solid var(--line); border-radius: 12px;
