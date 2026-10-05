@@ -358,7 +358,10 @@ async function finishSession() {
 
 // ---------- Timer, alarm, screen wake lock ----------
 let audioCtx;
-let alarmed = false;
+let lastLeft = null;   // seconds left at the previous tick; cues fire when a threshold is crossed
+let alarmTimer = null; // interval that repeats the time-up alarm until stopped
+let alarmStarted = 0;
+const ALARM_MAX_MS = 60_000;
 
 function elapsed(r) {
   const a = state.active;
@@ -379,13 +382,16 @@ function pauseTimer() {
   const r = currentResult();
   if (a?.timerStartedAt && r) r.elapsedSec = elapsed(r);
   if (a) a.timerStartedAt = null;
+  lastLeft = null;
+  stopAlarm();
 }
 
 function toggleTimer() {
   const a = state.active;
   audioCtx ??= new (window.AudioContext || window.webkitAudioContext)(); // must be created from a tap
+  audioCtx.resume?.();
   if (a.timerStartedAt) pauseTimer();
-  else { a.timerStartedAt = Date.now(); alarmed = clockState(currentResult()).left <= 0; }
+  else { a.timerStartedAt = Date.now(); lastLeft = null; }
   saveActive();
   render();
 }
@@ -393,32 +399,83 @@ function toggleTimer() {
 function resetTimer() {
   state.active.timerStartedAt = null;
   currentResult().elapsedSec = 0;
-  alarmed = false;
+  lastLeft = null;
+  stopAlarm();
   saveActive();
   render();
 }
 
-function alarm() {
-  navigator.vibrate?.([400, 200, 400, 200, 400]);
+// ----- Sounds (Web Audio, so nothing to download and it works offline) -----
+function tone(freq, at, dur, { vol = 0.3, type = 'sine' } = {}) {
   if (!audioCtx) return;
-  [0, 0.35, 0.7].forEach((t) => {
-    const o = audioCtx.createOscillator();
-    const g = audioCtx.createGain();
-    o.frequency.value = 880;
-    o.connect(g).connect(audioCtx.destination);
-    const s = audioCtx.currentTime + t;
-    g.gain.setValueAtTime(0.3, s);
-    g.gain.exponentialRampToValueAtTime(0.001, s + 0.25);
-    o.start(s);
-    o.stop(s + 0.25);
-  });
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type;
+  o.frequency.value = freq;
+  o.connect(g).connect(audioCtx.destination);
+  const s = audioCtx.currentTime + at;
+  g.gain.setValueAtTime(0.0001, s);
+  g.gain.exponentialRampToValueAtTime(vol, s + 0.01);
+  g.gain.setValueAtTime(vol, s + dur - 0.03);
+  g.gain.exponentialRampToValueAtTime(0.0001, s + dur);
+  o.start(s);
+  o.stop(s + dur + 0.02);
+}
+
+function oneMinuteWarning() {
+  tone(660, 0, 0.15, { vol: 0.5 });
+  tone(660, 0.22, 0.15, { vol: 0.5 });
+  navigator.vibrate?.([150, 100, 150]);
+}
+
+function countdownTick() {
+  tone(880, 0, 0.1, { vol: 0.45 });
+  navigator.vibrate?.(80);
+}
+
+// One burst of the time-up alarm: loud, alternating square-wave beeps
+function alarmBurst() {
+  [0, 0.2, 0.4, 0.6].forEach((t, i) => tone(i % 2 ? 784 : 1047, t, 0.17, { vol: 0.6, type: 'square' }));
+  navigator.vibrate?.([300, 100, 300]);
+}
+
+function startAlarm() {
+  stopAlarm();
+  alarmStarted = Date.now();
+  alarmBurst();
+  alarmTimer = setInterval(() => {
+    if (Date.now() - alarmStarted > ALARM_MAX_MS) return stopAlarm();
+    alarmBurst();
+  }, 1500);
+  $('#alarmBar').hidden = false;
+}
+
+function stopAlarm() {
+  clearInterval(alarmTimer);
+  alarmTimer = null;
+  navigator.vibrate?.(0);
+  const bar = $('#alarmBar');
+  if (bar) bar.hidden = true;
+}
+
+// Fire each cue once, when the time left crosses its threshold while the timer runs
+function timerCues(r, left) {
+  if (!state.active.timerStartedAt || left === Infinity) { lastLeft = null; return; }
+  const prev = lastLeft;
+  lastLeft = left;
+  if (prev === null) return;
+  const crossed = (t) => prev > t && left <= t;
+  if (crossed(0)) startAlarm();
+  else if ([1, 2, 3].some(crossed)) countdownTick();
+  else if (r.durationMin * 60 > 90 && crossed(60)) oneMinuteWarning();
 }
 
 function tick() {
   const r = currentResult();
   if (!r) return;
   const c = clockState(r);
-  if (state.active.timerStartedAt && c.left <= 0 && !alarmed) { alarmed = true; alarm(); }
+  timerCues(r, c.left);
   const el = document.getElementById('clock');
   if (el) { el.textContent = c.text; el.classList.toggle('over', c.over); }
 }
@@ -771,6 +828,7 @@ const actions = {
   next: () => { currentResult().done = true; goTo(state.active.current + 1); },
   'timer-toggle': toggleTimer,
   'timer-reset': resetTimer,
+  'stop-alarm': stopAlarm,
   hit: (el) => {
     currentResult()[hitsKey(playerOf())].push(el.dataset.v === '1');
     navigator.vibrate?.(30);
@@ -829,6 +887,7 @@ const actions = {
   finish: finishSession,
   discard: async () => {
     if (!confirm('Discard this session? Nothing from it will be saved.')) return;
+    stopAlarm();
     state.active = null;
     await setMeta('active', null);
     render();
