@@ -2,6 +2,8 @@
 
 A phone-first web app for running pickleball drill sessions on the court and saving the results to your PC.
 
+**Live app:** https://cpurpura.github.io/pickleball-tracker/
+
 - **Import drill plans** (JSON from Claude, or CSV) from your phone.
 - **Run a session:** drill-by-drill view with a countdown timer (beeps/vibrates at zero), big ✓ Made / ✗ Miss counters, a 1–5 rating and notes for each drill. The screen stays awake during a session.
 - **Works offline.** Everything is stored on the phone (IndexedDB). An unfinished session survives closing the app.
