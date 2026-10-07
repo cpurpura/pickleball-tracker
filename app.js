@@ -702,6 +702,21 @@ async function requestPersistence() {
   if (navigator.storage?.persist) state.persisted = await navigator.storage.persist();
 }
 
+// Drill pack shipped with the app; one tap adds it to the drill library
+const STARTER_DRILLS = { file: 'plans/starter-drills.json', count: 36 };
+
+function starterDrillsCard() {
+  const added = state.starterAdded;
+  return `<section class="card">
+    <div class="builtin-row first">
+      <div><b>Starter drill pack</b>
+        <p class="muted small">${STARTER_DRILLS.count} drills across every focus area: warm-ups, dinking, drops, drives, resets, volleys, serves, returns, lobs, overheads, footwork, shot selection and live play. Each has a target you can set a goal from.</p></div>
+      <button class="btn ${added ? '' : 'primary'}" data-action="load-starter-drills">${added ? 'Re-add' : '＋ Add'}</button>
+    </div>
+    ${added ? '<p class="muted small">Re-adding restores the original versions of these drills (your video links are kept).</p>' : ''}
+  </section>`;
+}
+
 // Plans shipped with the app (cached for offline use by sw.js); name must match the imported plan name's start
 const BUILT_IN_PLANS = [
   { file: 'plans/third-shot-drilling-plan.json', name: 'Third Shot Drops & Drives', about: '4-week program · Session A (drops) and Session B (drives and shot selection)' },
@@ -818,6 +833,7 @@ function libraryView() {
         <p class="muted small">Add a drill yourself, import a file of drills (JSON or CSV, or any plan file), or open a plan and tap <b>＋ Add to drill library</b> on a drill.</p>
         <button class="btn primary" data-action="new-drill">＋ New drill</button>
       </div>`}
+    ${starterDrillsCard()}
     ${selected.length ? `<div class="select-bar">
       <button class="btn primary" data-action="start-selected">▶ Start ${selected.length}</button>
       <button class="btn" data-action="plan-from-selection">Save as plan</button>
@@ -993,7 +1009,9 @@ function generatePlan({ focus, minutes, warmup, live, weak }) {
   const closing = [];
 
   if (warmup) {
-    const w = pool.find(isWarmup);
+    // Prefer a warm-up that fits the focus (e.g. the dink warm-up for a dinking plan)
+    const fit = (d) => areas.filter((a) => matchesArea(d, a)).length;
+    const w = pool.filter(isWarmup).sort((a, b) => fit(b) - fit(a))[0];
     if (w) {
       const m = Math.min(len(w), Math.max(5, Math.round(minutes * 0.15)));
       opening.push({ ...w, durationMin: m });
@@ -1070,6 +1088,7 @@ function generatorView() {
       </div>
       <p class="muted small">Uses the ${pool.length} drills you’ve imported. You can review and change everything before saving.</p>`
       : '<p class="muted small">You don’t have any drills yet. Import a plan or add drills to your library first.</p><button class="btn" data-action="gen-cancel">Back</button>'}
+      ${state.starterAdded ? '' : `<p class="small"><button class="link" data-action="load-starter-drills">＋ Add the starter drill pack (${STARTER_DRILLS.count} drills) for more choices</button></p>`}
       <p class="small"><button class="link" data-action="gen-claude">Need new drills for this focus? Copy a prompt for Claude</button></p>
     </section>`;
 }
@@ -1539,6 +1558,16 @@ function render() {
 const actions = {
   tab: (el) => { state.tab = el.dataset.tab; render(); scrollTo(0, 0); },
   import: (el) => { state.importTarget = el.dataset.target || 'plans'; $('#fileInput').click(); },
+  'load-starter-drills': async () => {
+    const res = await fetch(STARTER_DRILLS.file);
+    if (!res.ok) throw new Error('Couldn’t load the starter drills. Check your connection and try again.');
+    const { drills } = await res.json();
+    const { added, updated } = await addToLibrary(drills.map(normDrill).filter((d) => d.name));
+    state.starterAdded = true;
+    await setMeta('starterAdded', true);
+    toast(`Starter drills: ${added} added${updated ? `, ${updated} updated` : ''}`);
+    render(); // stays on the current screen (library, or the focus builder with new focus areas)
+  },
   'load-builtin': async (el) => {
     const file = el.dataset.file;
     if (!BUILT_IN_PLANS.some((b) => b.file === file)) return;
@@ -1936,6 +1965,7 @@ async function init() {
   state.active = upgradeActive((await getMeta('active')) ?? null);
   state.lastExport = (await getMeta('lastExport')) ?? null;
   state.goals = (await getMeta('goals')) ?? {};
+  state.starterAdded = (await getMeta('starterAdded')) ?? false;
   state.persisted = (await navigator.storage?.persisted?.()) ?? false;
   if (state.active) state.tab = 'session';
   render();

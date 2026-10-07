@@ -1,0 +1,294 @@
+{
+  "name": "Starter drill pack",
+  "description": "Drills covering every focus area. Each has a measurable target so you can set goals and track progress.",
+  "drills": [
+    {
+      "name": "Kitchen-line dink warm-up",
+      "category": "Warm-up",
+      "durationMin": 5,
+      "reps": 0,
+      "target": "Relaxed contact, no pop-ups",
+      "instructions": "Setup: partner, both at the kitchen line.\nStart with slow straight-ahead dinks, then add side-to-side movement. Loose grip (about 3 out of 10), paddle out front, lift from the legs."
+    },
+    {
+      "name": "Baseline groundstroke warm-up",
+      "category": "Warm-up",
+      "durationMin": 5,
+      "reps": 0,
+      "target": "Smooth, deep rally balls",
+      "instructions": "Setup: partner, both at the baseline.\nRally deep down the middle at medium pace. Focus on turning the shoulders, contact in front, and finishing high."
+    },
+    {
+      "name": "Volley-to-volley warm-up",
+      "category": "Warm-up",
+      "durationMin": 4,
+      "reps": 0,
+      "target": "Keep it going at a comfortable pace",
+      "instructions": "Setup: partner, both a step behind the kitchen line.\nControlled volleys back and forth at chest height. Short, compact punches with the paddle up and in front."
+    },
+    {
+      "name": "Cross-court dink rally",
+      "category": "Dinking",
+      "durationMin": 10,
+      "reps": 50,
+      "target": "8/10 land in the kitchen and stay low",
+      "instructions": "Setup: partner, diagonal at the kitchen line.\nDink cross-court only. Count a miss for anything that pops up above net height or lands out of the kitchen. Switch to the other diagonal halfway."
+    },
+    {
+      "name": "Straight-ahead dinks to targets",
+      "category": "Dinking",
+      "durationMin": 8,
+      "reps": 40,
+      "target": "7/10 land in the front half of the kitchen",
+      "instructions": "Setup: partner, or solo against a ball machine. Place a towel or cones in the front half of the opponent's kitchen.\nDink straight ahead to the target. Short backswing, lift from the knees, finish toward the target."
+    },
+    {
+      "name": "Figure-8 dinks",
+      "category": "Dinking",
+      "durationMin": 8,
+      "reps": 0,
+      "target": "Rally of 20 without an error",
+      "instructions": "Setup: partner at the kitchen line.\nOne player always dinks cross-court, the other always dinks straight ahead. The ball travels in a figure 8, which forces footwork and paddle-face changes. Swap roles every 2 minutes."
+    },
+    {
+      "name": "Moving dinks: side to side",
+      "category": "Dinking",
+      "durationMin": 8,
+      "reps": 30,
+      "target": "8/10 dinks made while moving",
+      "instructions": "Setup: partner feeds dinks alternating left and right of you.\nShuffle (don't cross your feet), set your feet before contact, and recover to the middle after every dink."
+    },
+    {
+      "name": "Dink patience: attack only the high ball",
+      "category": "Dinking",
+      "durationMin": 10,
+      "reps": 0,
+      "target": "8/10 correct choices (dink low balls, attack high ones)",
+      "instructions": "Setup: partner at the kitchen line.\nDink rally. When a ball sits up above net height, attack it at the opponent's feet or hip. Anything lower gets dinked again. Count a correct choice for each decision."
+    },
+    {
+      "name": "Baseline drops to a target",
+      "category": "Drops",
+      "durationMin": 12,
+      "reps": 30,
+      "target": "7/10 land in the kitchen",
+      "instructions": "Setup: partner at the kitchen line feeds deep balls; you're at the baseline.\nLow-to-high swing with the shoulder, not the wrist. Aim for the apex of the arc to be on your side of the net."
+    },
+    {
+      "name": "Drop ladder: baseline to transition",
+      "category": "Drops",
+      "durationMin": 10,
+      "reps": 30,
+      "target": "7/10 drops land in the kitchen at every distance",
+      "instructions": "Setup: partner feeds from the kitchen.\nHit 10 drops from the baseline, then 10 from mid-court, then 10 from just behind the transition zone. Shorten the swing as you move closer."
+    },
+    {
+      "name": "Backhand third-shot drops",
+      "category": "Drops",
+      "durationMin": 10,
+      "reps": 30,
+      "target": "6/10 land in the kitchen",
+      "instructions": "Setup: partner feeds deep to your backhand side.\nTurn your shoulders, keep the paddle face open and lead with the paddle edge. Lift with the legs and shoulder, not the wrist."
+    },
+    {
+      "name": "Drop, split, reset (3-shot sequence)",
+      "category": "Drops",
+      "durationMin": 12,
+      "reps": 20,
+      "target": "6/10 sequences reach the kitchen line without an error",
+      "instructions": "Setup: partner at the kitchen line.\nHit a drop from the baseline, move forward 2–3 steps, split-step as your partner contacts the ball, reset the next ball into the kitchen, then move to the line."
+    },
+    {
+      "name": "Drive to the feet",
+      "category": "Drives",
+      "durationMin": 10,
+      "reps": 30,
+      "target": "7/10 drives land low at the partner's feet",
+      "instructions": "Setup: partner at the kitchen line feeds; you're at the baseline.\nLow to high with topspin, contact in front, and clear the net by 2 feet or less. Aim at the feet or the paddle-side hip."
+    },
+    {
+      "name": "Drive and crash: third-shot drive + volley",
+      "category": "Drives",
+      "durationMin": 10,
+      "reps": 20,
+      "target": "6/10 drive-then-volley sequences without an error",
+      "instructions": "Setup: partner at the kitchen line.\nDrive the third shot, follow it in 2–3 steps, split-step, and volley or drop the block that comes back. A drive is a setup, not a winner."
+    },
+    {
+      "name": "Backhand drives",
+      "category": "Drives",
+      "durationMin": 8,
+      "reps": 30,
+      "target": "6/10 land deep and low",
+      "instructions": "Setup: partner feeds to your backhand from the kitchen.\nUnit turn, step into the ball, contact out in front and finish high. Keep the ball low over the net."
+    },
+    {
+      "name": "Transition-zone resets off hard feeds",
+      "category": "Resets",
+      "durationMin": 10,
+      "reps": 30,
+      "target": "7/10 resets land in the kitchen",
+      "instructions": "Setup: you're mid-court; partner at the kitchen line hits medium-to-hard balls at you.\nSoften your grip, keep the paddle out in front, and absorb the pace back into the kitchen. No swing, just a block."
+    },
+    {
+      "name": "Reset off a speed-up",
+      "category": "Resets",
+      "durationMin": 8,
+      "reps": 30,
+      "target": "6/10 speed-ups reset into the kitchen",
+      "instructions": "Setup: dink rally with a partner at the kitchen line. Partner speeds up without warning.\nStay low with the paddle up, and block the speed-up softly back into the kitchen instead of counter-attacking."
+    },
+    {
+      "name": "Low-ball resets from the feet",
+      "category": "Resets",
+      "durationMin": 8,
+      "reps": 30,
+      "target": "6/10 land in the kitchen without popping up",
+      "instructions": "Setup: you're in the transition zone; partner feeds low balls at your feet.\nBend your knees (not your back), open the paddle face slightly, and lift gently. Hold the finish."
+    },
+    {
+      "name": "Volley-to-volley hands rally",
+      "category": "Volleys",
+      "durationMin": 8,
+      "reps": 0,
+      "target": "Rally of 20 volleys in a row",
+      "instructions": "Setup: partner, both just behind the kitchen line.\nFast but controlled volleys. Keep the paddle up between shots and use compact motions from the forearm, not big swings."
+    },
+    {
+      "name": "Speed-up and counter",
+      "category": "Volleys",
+      "durationMin": 10,
+      "reps": 30,
+      "target": "6/10 exchanges won",
+      "instructions": "Setup: dink rally at the kitchen line.\nEither player may speed up a ball that's above net height. Play out the hands battle. Aim speed-ups at the dominant shoulder or hip, and counter with a short punch."
+    },
+    {
+      "name": "Punch volleys to the feet",
+      "category": "Volleys",
+      "durationMin": 8,
+      "reps": 30,
+      "target": "7/10 volleys land at the partner's feet",
+      "instructions": "Setup: partner in the transition zone feeds medium balls; you're at the kitchen line.\nPunch down at the feet with a firm wrist and short follow-through. Don't swing."
+    },
+    {
+      "name": "Roll volleys from the kitchen",
+      "category": "Volleys",
+      "durationMin": 8,
+      "reps": 30,
+      "target": "7/10 roll volleys dip into the court",
+      "instructions": "Setup: partner feeds medium-height balls to you at the kitchen line.\nBrush up the back of the ball with a low-to-high wrist roll so it dips at your partner's feet."
+    },
+    {
+      "name": "Deep serves to the back third",
+      "category": "Serves",
+      "durationMin": 8,
+      "reps": 20,
+      "target": "8/10 land in the back third",
+      "instructions": "Setup: solo is fine. Mark the back third of each service box with a towel or tape.\nAlternate service boxes. Use a smooth, repeatable motion and aim deep rather than hard."
+    },
+    {
+      "name": "Serve placement: backhand corner",
+      "category": "Serves",
+      "durationMin": 8,
+      "reps": 20,
+      "target": "7/10 land deep in the backhand corner",
+      "instructions": "Setup: solo is fine. Place a target deep in the receiver's backhand corner (for a right-hander).\nKeep the same motion and change only your aim."
+    },
+    {
+      "name": "Deep return of serve",
+      "category": "Returns",
+      "durationMin": 8,
+      "reps": 20,
+      "target": "8/10 returns land in the back third",
+      "instructions": "Setup: partner serves; you return.\nHit high and deep with a slice or a flat drive. A deep return pins the serving team back and buys you time to reach the kitchen."
+    },
+    {
+      "name": "Return and get to the kitchen",
+      "category": "Returns",
+      "durationMin": 8,
+      "reps": 20,
+      "target": "8/10 at the kitchen line before the third shot bounces",
+      "instructions": "Setup: partner serves, then hits a third shot.\nReturn deep, then move forward right away and split-step as the server contacts the third shot."
+    },
+    {
+      "name": "Offensive lob from the kitchen",
+      "category": "Lobs",
+      "durationMin": 8,
+      "reps": 20,
+      "target": "5/10 lobs land deep, over the partner's reach",
+      "instructions": "Setup: dink rally with a partner at the kitchen line.\nDisguise the lob as a dink: same setup, then lift with the legs over their backhand shoulder. Use it sparingly in games."
+    },
+    {
+      "name": "Lob retrieval: turn, run, reset",
+      "category": "Lobs",
+      "durationMin": 8,
+      "reps": 20,
+      "target": "5/10 lobs returned with a reset or a high defensive lob",
+      "instructions": "Setup: partner lobs over you while you're at the kitchen line.\nTurn and run (don't backpedal), get behind the ball, and reset with a drop or a high, deep defensive lob."
+    },
+    {
+      "name": "Overhead put-aways",
+      "category": "Overheads",
+      "durationMin": 8,
+      "reps": 20,
+      "target": "7/10 overheads land in the court, at the feet or angled away",
+      "instructions": "Setup: partner feeds short lobs.\nTurn sideways, point at the ball with your non-paddle hand, and contact high and in front. Place the ball rather than hitting it as hard as you can."
+    },
+    {
+      "name": "Split-step timing",
+      "category": "Footwork",
+      "durationMin": 6,
+      "reps": 20,
+      "target": "9/10 split-steps landed as the partner contacts the ball",
+      "instructions": "Setup: partner hits balls to you as you move forward from the baseline.\nTake small hops so both feet land as your partner makes contact. Stay on the balls of your feet, then move to the ball."
+    },
+    {
+      "name": "Lateral shuffle at the kitchen line",
+      "category": "Footwork",
+      "durationMin": 5,
+      "reps": 0,
+      "target": "Balanced and paddle up the whole time",
+      "instructions": "Setup: solo is fine.\nShuffle along the kitchen line from sideline to center and back without crossing your feet. Keep the paddle up and your weight forward. Do 30 seconds on, 15 seconds off."
+    },
+    {
+      "name": "Drop or drive: read the return",
+      "category": "Shot selection",
+      "durationMin": 10,
+      "reps": 20,
+      "target": "8/10 correct calls",
+      "instructions": "Setup: partner returns at random depths.\nCall your shot out loud as you read the bounce: deep or low means drop, short or high means drive. Score your decision, not how well you hit it."
+    },
+    {
+      "name": "Attack or reset: the high/low call",
+      "category": "Shot selection",
+      "durationMin": 10,
+      "reps": 20,
+      "target": "8/10 correct calls",
+      "instructions": "Setup: partner feeds a mix of high and low balls to you in the transition zone.\nAttack balls above net height and reset balls below it. Call it out loud before you hit."
+    },
+    {
+      "name": "Skinny singles: half-court games to 11",
+      "category": "Live play",
+      "durationMin": 15,
+      "reps": 0,
+      "target": "Win more points by patience than by power",
+      "instructions": "Setup: partner, half court (centerline to sideline).\nPlay full points to 11. Log points won as Made and points lost as Miss."
+    },
+    {
+      "name": "Cross-court dinking games to 11",
+      "category": "Live play",
+      "durationMin": 10,
+      "reps": 0,
+      "target": "Win the game with fewer than 3 unforced errors",
+      "instructions": "Setup: partner, diagonal half of the court, kitchen line only.\nStart every point with a dink. Speed-ups are allowed only on balls above the net. Log points won as Made and points lost as Miss."
+    },
+    {
+      "name": "Third-shot games to 7",
+      "category": "Live play",
+      "durationMin": 15,
+      "reps": 0,
+      "target": "Win half your serving points",
+      "instructions": "Setup: 2 or 4 players.\nThe serving team starts at the baseline and the receiving team at the kitchen line. The third shot must be a drop or a drive, then play out the point. Log points won as Made and points lost as Miss."
+    }
+  ]
+}
