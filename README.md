@@ -6,6 +6,7 @@ A phone-first web app for running pickleball drill sessions on the court and sav
 
 - **Import drill plans** (JSON from Claude, or CSV) from your phone.
 - **Goals & progress per drill:** set a success-% goal for any drill (suggested from targets like "7/10"). Each drill's progress page shows sessions, latest, best, last-5 average, goal-met count, a chart against the goal line, and recent results with notes. Sessions show live goal status, and the CSV records the goal and whether it was met.
+- **Build a plan by focus & time:** pick focus areas (only ones you have drills for) and how long you'll drill. The app builds a plan from your imported drills, with an optional warm-up and live-play finish. It alternates between focus areas, favors drills you're below goal on or haven't done lately, and fits the minutes exactly. Review it in the builder before saving.
 - **Build your own plans:** choose from every drill you've imported (library and plans), reorder them, and set minutes per drill. **Edit** opens any existing plan in the same builder.
 - **Drill library:** keep individual drills outside of any plan. Add them by hand, import them from a file, or save them from a plan. Run one drill, or tick several to run as a custom session.
 - **Run a session:** drill-by-drill view with a countdown timer (beeps/vibrates at zero), big ✓ Made / ✗ Miss counters, a 1–5 rating and notes for each drill. The screen stays awake during a session.

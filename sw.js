@@ -1,6 +1,6 @@
 // Service worker: caches the app so it opens with no signal at the courts.
 // Bump CACHE when you change files, so phones pick up the new version.
-const CACHE = 'pb-drills-v10';
+const CACHE = 'pb-drills-v11';
 const ASSETS = [
   './', 'index.html', 'styles.css', 'app.js', 'manifest.webmanifest', 'sample-plan.json',
   'plans/third-shot-drilling-plan.json',

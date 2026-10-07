@@ -216,6 +216,23 @@ body.sheet-open { overflow: hidden; }
 .c-pt:focus .c-dot, .c-pt:hover .c-dot { r: 6; }
 .chart figcaption { margin-top: 4px; min-height: 1.3em; }
 
+/* Build-by-focus */
+.focus-cta { margin: -4px 0 14px; border-style: dashed; border-color: var(--brand); color: var(--brand); }
+.focus-chips { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 6px; }
+.fchip {
+  min-height: 40px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--surface); color: var(--text); font: inherit; font-weight: 600; cursor: pointer;
+}
+.fchip span { margin-left: 4px; color: var(--muted); font-weight: 400; }
+.fchip.on { background: var(--brand); border-color: var(--brand); color: var(--brand-ink); }
+.fchip.on span { color: inherit; opacity: .8; }
+.minutes { flex-wrap: wrap; gap: 6px; }
+.minutes .btn { min-width: 48px; padding: 0 10px; }
+.minutes input { flex: 1 0 70px; max-width: 90px; text-align: center; }
+.checks { margin: 10px 0 4px; }
+.checks label { display: flex; align-items: center; gap: 10px; font-weight: 400; margin: 8px 0; }
+.checks input[type=checkbox] { flex: 0 0 auto; width: 20px; height: 20px; margin: 0; accent-color: var(--brand); }
+
 .build-list { list-style: none; padding: 0; margin: 0; }
 .build-list li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
 .bl-num {

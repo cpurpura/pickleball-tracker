@@ -933,9 +933,151 @@ function builderView() {
     </div>`;
 }
 
+// ---------- Build a plan by focus & time ----------
+// Focus areas matched against a drill's name + category (not instructions, which mention many skills)
+const FOCUS_AREAS = [
+  ['Dinking', ['dink']],
+  ['Drops', ['drop']],
+  ['Drives', ['drive']],
+  ['Resets', ['reset', 'transition']],
+  ['Volleys', ['volley', 'hands', 'speed-up', 'speed up', 'counter']],
+  ['Serves', ['serve']],
+  ['Returns', ['return']],
+  ['Lobs', ['lob']],
+  ['Overheads', ['overhead', 'smash']],
+  ['Footwork', ['footwork', 'split', 'movement']],
+  ['Shot selection', ['selection', 'decision']],
+  ['Live play', ['live', 'game', 'points', 'singles']],
+];
+const drillText = (d) => `${d.name} ${d.category}`.toLowerCase();
+const isWarmup = (d) => /warm/.test(drillText(d));
+const matchesArea = (d, area) => area.keywords.some((k) => drillText(d).includes(k));
+
+// Preset areas that have drills, plus any other categories in your drills
+function focusAreas(pool) {
+  const areas = FOCUS_AREAS.map(([label, keywords]) => ({ label, keywords }));
+  for (const c of new Set(pool.map((d) => d.category).filter(Boolean))) {
+    const lc = c.toLowerCase();
+    if (!/warm/.test(lc) && !areas.some((a) => a.label.toLowerCase() === lc || a.keywords.some((k) => lc.includes(k)))) {
+      areas.push({ label: c, keywords: [lc] });
+    }
+  }
+  return areas
+    .map((a) => ({ ...a, count: pool.filter((d) => !isWarmup(d) && matchesArea(d, a)).length }))
+    .filter((a) => a.count > 0);
+}
+
+// How far below goal a drill has been lately (positive = below goal), from its last 3 scored sessions
+function goalGap(name) {
+  const g = goalFor(name);
+  if (!g) return 0;
+  const recent = drillHistory(name).filter((r) => r.pct !== null).slice(-3);
+  if (!recent.length) return 0;
+  return g.pct - recent.reduce((t, r) => t + r.pct, 0) / recent.length;
+}
+
+const lastDone = (name) => {
+  const key = name.toLowerCase();
+  const s = state.sessions.find((x) => x.results.some((r) => r.name.toLowerCase() === key && (r.attempts || r.elapsedSec)));
+  return s ? Date.parse(s.startedAt) : 0;
+};
+
+function generatePlan({ focus, minutes, warmup, live, weak }) {
+  const pool = drillPool();
+  const areas = focusAreas(pool).filter((a) => focus.has(a.label));
+  const liveArea = { keywords: FOCUS_AREAS.find(([l]) => l === 'Live play')[1] };
+  const len = (d) => Math.min(25, Math.max(5, d.durationMin || 10));
+  const used = new Set();
+  let remaining = minutes;
+  const opening = [];
+  const closing = [];
+
+  if (warmup) {
+    const w = pool.find(isWarmup);
+    if (w) {
+      const m = Math.min(len(w), Math.max(5, Math.round(minutes * 0.15)));
+      opening.push({ ...w, durationMin: m });
+      used.add(drillKey(w));
+      remaining -= m;
+    }
+  }
+  if (live && !focus.has('Live play') && minutes >= 30) {
+    const l = pool.find((d) => !isWarmup(d) && matchesArea(d, liveArea));
+    if (l) {
+      const m = Math.min(len(l), Math.max(5, Math.round(minutes * 0.2)));
+      closing.push({ ...l, durationMin: m });
+      used.add(drillKey(l));
+      remaining -= m;
+    }
+  }
+
+  // One ranked queue per focus area: below-goal first (if asked), then least recently practiced
+  const rank = (a, b) => (weak ? goalGap(b.name) - goalGap(a.name) : 0) || lastDone(a.name) - lastDone(b.name) || a.name.localeCompare(b.name);
+  const queues = areas.map((a) => pool.filter((d) => !isWarmup(d) && matchesArea(d, a)).sort(rank));
+  const picks = [];
+  // Alternate between focus areas so each one gets time
+  while (remaining >= 5 && queues.some((q) => q.some((d) => !used.has(drillKey(d))))) {
+    for (const q of queues) {
+      if (remaining < 5) break;
+      const d = q.find((x) => !used.has(drillKey(x)));
+      if (!d) continue;
+      used.add(drillKey(d));
+      let m = Math.min(len(d), remaining);
+      if (remaining - m < 5) m = remaining; // don't leave a sliver of time
+      picks.push({ ...d, durationMin: m });
+      remaining -= m;
+    }
+  }
+  if (!picks.length) return null;
+
+  // Spread any leftover time over the focus drills (up to 30 min each), the rest on the last one
+  while (remaining > 0) {
+    const growable = picks.filter((p) => p.durationMin < 30);
+    if (!growable.length) { picks[picks.length - 1].durationMin += remaining; break; }
+    for (const p of growable) { if (remaining <= 0) break; p.durationMin += 1; remaining -= 1; }
+  }
+  if (remaining < 0) picks[picks.length - 1].durationMin = Math.max(5, picks[picks.length - 1].durationMin + remaining);
+  return [...opening, ...picks, ...closing];
+}
+
+function generatorView() {
+  const g = state.generator;
+  const pool = drillPool();
+  const areas = focusAreas(pool);
+  const hasGoals = Object.keys(state.goals).length > 0;
+  return `<section class="card form">
+      <h2>⚡ Build a plan by focus</h2>
+      ${pool.length ? `
+      <label>What do you want to work on?</label>
+      <div class="focus-chips" role="group" aria-label="Focus areas">
+        ${areas.map((a) => `<button class="fchip ${g.focus.has(a.label) ? 'on' : ''}" data-action="gen-focus" data-v="${esc(a.label)}" aria-pressed="${g.focus.has(a.label)}">
+          ${esc(a.label)} <span class="small">${a.count}</span></button>`).join('')}
+      </div>
+      <label for="g-min">How long will you drill?</label>
+      <div class="row tight minutes">
+        ${[30, 45, 60, 90, 120].map((m) => `<button class="btn small ${g.minutes === m ? 'primary' : ''}" data-action="gen-min" data-v="${m}">${m}</button>`).join('')}
+        <input id="g-min" data-field="g-min" type="number" inputmode="numeric" min="10" max="240" value="${g.minutes}" aria-label="Minutes">
+      </div>
+      <div class="checks">
+        <label><input type="checkbox" data-field="g-warm" ${g.warmup ? 'checked' : ''}> Start with a warm-up</label>
+        <label><input type="checkbox" data-field="g-live" ${g.live ? 'checked' : ''}> Finish with live play / games</label>
+        <label class="${hasGoals ? '' : 'muted'}"><input type="checkbox" data-field="g-weak" ${g.weak ? 'checked' : ''} ${hasGoals ? '' : 'disabled'}>
+          Prioritize drills where I’m below my goal${hasGoals ? '' : ' <span class="small">(set goals first)</span>'}</label>
+      </div>
+      <div class="row">
+        <button class="btn primary" data-action="gen-build" ${g.focus.size ? '' : 'disabled'}>Build plan</button>
+        <button class="btn" data-action="gen-cancel">Cancel</button>
+      </div>
+      <p class="muted small">Uses the ${pool.length} drills you’ve imported. You can review and change everything before saving.</p>`
+      : '<p class="muted small">You don’t have any drills yet. Import a plan or add drills to your library first.</p><button class="btn" data-action="gen-cancel">Back</button>'}
+      <p class="small"><button class="link" data-action="gen-claude">Need new drills for this focus? Copy a prompt for Claude</button></p>
+    </section>`;
+}
+
 const views = {
   plans() {
     if (state.builder) return builderView();
+    if (state.generator) return generatorView();
     const sub = `<div class="seg subtabs" role="tablist">
       <button role="tab" class="${state.plansView !== 'drills' ? 'on' : ''}" data-action="plans-view" data-v="plans" aria-selected="${state.plansView !== 'drills'}">Plans</button>
       <button role="tab" class="${state.plansView === 'drills' ? 'on' : ''}" data-action="plans-view" data-v="drills" aria-selected="${state.plansView === 'drills'}">Drill library${state.library.length ? ` (${state.library.length})` : ''}</button>
@@ -978,6 +1120,7 @@ const views = {
           <button class="btn primary" data-action="new-plan">＋ New</button>
         </div>
       </div>
+      <button class="btn block focus-cta" data-action="gen-open">⚡ Build a plan by focus &amp; time</button>
       ${list || `<div class="empty">
         <p>No plans yet.</p>
         <p class="muted small">Add a built-in plan below, or ask Claude for a drill plan (see the <b>Data</b> tab for a ready-made prompt), save it as a <code>.json</code> file, then tap <b>Import</b>.</p>
@@ -1560,6 +1703,46 @@ const actions = {
     openBuilder(null, drills);
   },
   'new-plan': () => openBuilder(null),
+  'gen-open': () => {
+    // Start from your last choices (kept for this visit), or sensible defaults
+    const last = state.genLast;
+    state.generator ??= last
+      ? { ...last, focus: new Set(last.focus) }
+      : { focus: new Set(), minutes: 60, warmup: true, live: true, weak: Object.keys(state.goals).length > 0 };
+    state.tab = 'plans';
+    render();
+    scrollTo(0, 0);
+  },
+  'gen-cancel': () => { state.generator = null; render(); },
+  'gen-focus': (el) => {
+    const f = state.generator.focus;
+    if (f.has(el.dataset.v)) f.delete(el.dataset.v); else f.add(el.dataset.v);
+    render();
+  },
+  'gen-min': (el) => { state.generator.minutes = +el.dataset.v; render(); },
+  'gen-build': () => {
+    const g = state.generator;
+    const drills = generatePlan(g);
+    if (!drills) return toast('No drills match that focus yet. Try another focus, or copy the Claude prompt to get new drills.', true);
+    const focusList = [...g.focus];
+    let name = `${focusList.join(' & ')} · ${g.minutes} min`;
+    if (state.plans.some((p) => p.name.toLowerCase() === name.toLowerCase())) name += ` (${localDate(new Date())})`;
+    const below = g.weak ? drills.filter((d) => goalGap(d.name) > 0).map((d) => d.name) : [];
+    const description = `Focus: ${focusList.join(', ')} · ${g.minutes} min.${below.length ? ` Prioritized (below goal): ${below.join(', ')}.` : ''}`;
+    state.genLast = g;
+    state.generator = null;
+    openBuilder({ name, description }, drills);
+    toast(`Built ${drills.length} drills · ${drills.reduce((t, d) => t + d.durationMin, 0)} min. Review, then Save.`);
+  },
+  'gen-claude': async () => {
+    const g = state.generator;
+    const focus = g?.focus.size ? [...g.focus].join(', ') : '[e.g. third-shot drops and resets]';
+    const text = CLAUDE_PROMPT
+      .replace('[e.g. third-shot drops and resets]', focus)
+      .replace('[e.g. 60 min]', g ? `${g.minutes} min` : '[e.g. 60 min]');
+    try { await navigator.clipboard.writeText(text); toast('Prompt copied. Paste it into Claude.'); }
+    catch { toast('Couldn’t copy. Use the prompt on the Data tab instead.', true); }
+  },
   'edit-plan': (el) => openBuilder(planById(el.dataset.id)),
   'b-add': (el) => {
     const d = drillPool().find((x) => drillKey(x) === el.dataset.k);
@@ -1668,6 +1851,14 @@ function bindEvents() {
   });
   document.addEventListener('change', (e) => {
     if (e.target.dataset.field === 'stats-player') { state.statsPlayer = e.target.value; render(); }
+    if (state.generator) {
+      const g = state.generator;
+      const f = e.target.dataset.field;
+      if (f === 'g-min') { g.minutes = Math.min(240, Math.max(10, Math.round(num(e.target.value)) || 60)); render(); }
+      if (f === 'g-warm') g.warmup = e.target.checked;
+      if (f === 'g-live') g.live = e.target.checked;
+      if (f === 'g-weak') g.weak = e.target.checked;
+    }
     if (e.target.dataset.field === 'detail-who') { state.detailWho = e.target.value; renderSheet(); }
     if (e.target.dataset.field === 'b-min' && state.builder) {
       const d = state.builder.drills[+e.target.dataset.i];
