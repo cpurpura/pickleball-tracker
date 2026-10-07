@@ -5,6 +5,7 @@ A phone-first web app for running pickleball drill sessions on the court and sav
 **Live app:** https://cpurpura.github.io/pickleball-tracker/
 
 - **Import drill plans** (JSON from Claude, or CSV) from your phone.
+- **Goals & progress per drill:** set a success-% goal for any drill (suggested from targets like "7/10"). Each drill's progress page shows sessions, latest, best, last-5 average, goal-met count, a chart against the goal line, and recent results with notes. Sessions show live goal status, and the CSV records the goal and whether it was met.
 - **Build your own plans:** choose from every drill you've imported (library and plans), reorder them, and set minutes per drill. **Edit** opens any existing plan in the same builder.
 - **Drill library:** keep individual drills outside of any plan. Add them by hand, import them from a file, or save them from a plan. Run one drill, or tick several to run as a custom session.
 - **Run a session:** drill-by-drill view with a countdown timer (beeps/vibrates at zero), big ✓ Made / ✗ Miss counters, a 1–5 rating and notes for each drill. The screen stays awake during a session.

@@ -176,6 +176,46 @@ textarea {
 .builtin-row p { margin: 2px 0 0; }
 .builtin-row .btn { flex: 0 0 auto; }
 
+/* Drill goal & progress sheet */
+.sheet {
+  position: fixed; inset: 0; z-index: 8; overflow-y: auto; overscroll-behavior: contain;
+  background: var(--bg); padding: calc(12px + env(safe-area-inset-top)) 16px calc(90px + env(safe-area-inset-bottom));
+}
+.sheet[hidden] { display: none; }
+body.sheet-open { overflow: hidden; }
+.sheet-panel { max-width: 640px; margin: 0 auto; }
+.sheet-panel:focus { outline: none; }
+.sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.sheet-head h2 { margin: 0; }
+.goal-row { align-items: center; }
+.goal-row input { flex: 0 0 90px; text-align: center; font-size: 1.2rem; font-weight: 700; }
+.goal-row span { flex: 1; }
+.goal-line { margin: 6px 0; font-size: .95rem; }
+.goal-chip { padding: 0; font-size: .8rem; text-align: left; text-decoration: none; }
+.note-row td { border-top: 0; padding-top: 0; }
+.table tr.note-row + tr td, .table tr:has(+ .note-row) td { border-bottom: 0; }
+
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; margin: 6px 0 12px; }
+.tile { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border-radius: 10px; background: var(--bg); border: 1px solid var(--line); }
+.tile b { font-size: 1.25rem; font-variant-numeric: tabular-nums; }
+
+/* Progress chart: one series, so the title names it and no legend box is needed */
+:root { --chart-line: #0d9488; }
+@media (prefers-color-scheme: dark) { :root { --chart-line: #11a899; } }
+.chart { margin: 0; }
+.chart svg { width: 100%; height: auto; display: block; overflow: visible; }
+.c-grid { stroke: var(--line); stroke-width: 1; }
+.c-axis { fill: var(--muted); font-size: 10px; }
+.c-goal { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.c-goal-label { fill: var(--muted); font-size: 10px; font-weight: 600; }
+.c-line { fill: none; stroke: var(--chart-line); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.c-dot { fill: var(--chart-line); stroke: var(--surface); stroke-width: 2; }
+.c-dot.hollow { fill: var(--surface); stroke: var(--chart-line); stroke-width: 2; }
+.c-hit { fill: transparent; cursor: pointer; }
+.c-pt:focus { outline: none; }
+.c-pt:focus .c-dot, .c-pt:hover .c-dot { r: 6; }
+.chart figcaption { margin-top: 4px; min-height: 1.3em; }
+
 .build-list { list-style: none; padding: 0; margin: 0; }
 .build-list li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
 .bl-num {

@@ -68,6 +68,8 @@ const state = {
   plansView: 'plans',     // Plans tab: 'plans' or 'drills' (library)
   editDrill: null,        // library drill id being edited, or 'new'
   importTarget: 'plans',
+  goals: {},              // { 'drill name (lowercase)': { pct } }
+  drillDetail: null,      // drill name whose goal & progress sheet is open
   active: null,      // in-progress session (persisted in meta so it survives closing the app)
   openPlan: null,
   openSession: null,
@@ -290,6 +292,7 @@ function parseImport(text, filename) {
       plans: (data.plans || []).map((p) => normPlan(p, fallbackName)),
       sessions: data.sessions || [],
       library: (data.library || []).map(normDrill).filter((d) => d.name),
+      goals: data.goals && typeof data.goals === 'object' ? data.goals : {},
     };
   }
   if (Array.isArray(data?.sessions) && data.sessions.some((s) => Array.isArray(s?.blocks || s?.drills))) {
@@ -343,6 +346,11 @@ async function importText(text, filename) {
   }
   const { plans, sessions } = parsed;
   if (parsed.library.length) await addToLibrary(parsed.library);
+  // Restore goals from a backup (only valid 1–100 values)
+  for (const [k, g] of Object.entries(parsed.goals || {})) {
+    if (g && num(g.pct) >= 1 && num(g.pct) <= 100) state.goals[String(k).toLowerCase()] = { pct: Math.round(num(g.pct)) };
+  }
+  if (parsed.goals) await saveGoals();
   for (const p of plans) {
     // Re-importing a plan with the same name replaces it (past sessions are unaffected)
     const existing = state.plans.find((x) => x.id === p.id || x.name.toLowerCase() === p.name.toLowerCase());
@@ -369,7 +377,7 @@ async function importText(text, filename) {
 
 // ---------- Export ----------
 const CSV_COLS = ['session_date', 'start_time', 'week', 'plan', 'drill_no', 'drill', 'category', 'target',
-  'planned_min', 'actual_min', 'attempts', 'made', 'success_pct', 'drill_rating', 'drill_notes',
+  'planned_min', 'actual_min', 'attempts', 'made', 'success_pct', 'goal_pct', 'goal_met', 'drill_rating', 'drill_notes',
   'partner', 'partner_attempts', 'partner_made', 'partner_success_pct', 'partner_rating', 'partner_notes',
   'session_rating', 'session_notes', 'session_id'];
 
@@ -381,7 +389,10 @@ function sessionsToCSV(sessions) {
     s.results.forEach((r, i) => rows.push([
       localDate(d), localTime(d), s.week ?? '', s.planName, i + 1, r.name, r.category, r.target,
       r.durationMin || '', (r.elapsedSec / 60).toFixed(1), r.attempts, r.made,
-      pct(r.made, r.attempts) ?? '', r.rating || '', r.notes,
+      pct(r.made, r.attempts) ?? '',
+      r.goalPct ?? '',
+      r.goalPct != null && r.attempts ? (pct(r.made, r.attempts) >= r.goalPct ? 'yes' : 'no') : '',
+      r.rating || '', r.notes,
       s.partner || '',
       s.partner ? r.partnerAttempts ?? 0 : '',
       s.partner ? r.partnerMade ?? 0 : '',
@@ -396,7 +407,7 @@ function sessionsToCSV(sessions) {
 
 const backupJSON = () => JSON.stringify({
   type: 'pickleball-drill-backup', version: 1, exportedAt: new Date().toISOString(),
-  plans: state.plans, sessions: state.sessions, library: state.library,
+  plans: state.plans, sessions: state.sessions, library: state.library, goals: state.goals,
 }, null, 2);
 
 function download(file) {
@@ -502,6 +513,7 @@ async function finishSession() {
       ...r,
       attempts: r.hits.length, made: r.hits.filter(Boolean).length,
       partnerAttempts: r.partnerHits.length, partnerMade: r.partnerHits.filter(Boolean).length,
+      goalPct: goalFor(r.name)?.pct ?? null, // the goal in place for this session, for the CSV
     })),
   };
   await db.put('sessions', session);
@@ -780,6 +792,7 @@ function libraryView() {
       ${open ? `<div class="card-body">
         ${d.target ? `<p class="small"><b>Target:</b> ${esc(d.target)}</p>` : ''}
         ${d.instructions ? `<p class="muted small note">${esc(d.instructions)}</p>` : ''}
+        <p class="small">${progressLink(d.name)}</p>
         ${videoLinks(d, { drill: d.id }, true)}
         <div class="row">
           <button class="btn primary" data-action="start-drill" data-id="${esc(d.id)}">▶ Start</button>
@@ -874,7 +887,8 @@ function builderView() {
 
   const chosen = b.drills.length ? `<ol class="build-list">${b.drills.map((d, i) => `<li>
       <span class="bl-num">${i + 1}</span>
-      <div class="bl-main"><strong>${esc(d.name)}</strong>${d.category ? `<span class="muted small">${esc(d.category)}</span>` : ''}</div>
+      <div class="bl-main"><strong>${esc(d.name)}</strong>${d.category ? `<span class="muted small">${esc(d.category)}</span>` : ''}
+        <button class="link small goal-chip" data-action="drill-detail" data-name="${esc(d.name)}">${goalFor(d.name) ? goalText(d.name) : '🎯 Set goal'}</button></div>
       <label class="bl-min"><input type="number" inputmode="decimal" min="0" step="0.5" data-field="b-min" data-i="${i}"
         value="${d.durationMin || ''}" placeholder="–" aria-label="Minutes for ${esc(d.name)}"><span class="small">min</span></label>
       <div class="bl-btns">
@@ -942,6 +956,7 @@ const views = {
             <strong>${esc(d.name)}</strong>${drillMeta(d)}
             ${d.target ? `<p class="small"><b>Target:</b> ${esc(d.target)}</p>` : ''}
             ${d.instructions ? `<p class="muted small note">${esc(d.instructions)}</p>` : ''}
+            <p class="small">${progressLink(d.name)}</p>
             ${videoLinks(d, { plan: p.id, i }, true)}
             ${inLibrary(d.name)
               ? '<p class="muted small">✓ In drill library</p>'
@@ -1013,6 +1028,7 @@ const views = {
         ${r.category ? `<p class="eyebrow">${esc(r.category)}</p>` : ''}
         <h2>${esc(r.name)}</h2>
         ${r.target ? `<p><b>Target:</b> ${esc(r.target)}</p>` : ''}
+        ${goalStatus(r, hits)}
         ${r.instructions ? `<p class="muted note">${esc(r.instructions)}</p>` : ''}
         <details class="videos"><summary>🎬 Videos${r.videos.length ? ` (${r.videos.length})` : ''}</summary>
           ${videoLinks(r, r.libraryId ? { drill: r.libraryId } : { plan: a.planId, i: a.current })}
@@ -1082,9 +1098,10 @@ const views = {
         <div class="toolbar"><h3>Drill progress</h3>${picker}</div>
         ${stats.length ? '' : '<p class="muted small">No made/miss results logged yet.</p>'}
         <table class="table">
-          <thead><tr><th>Drill</th><th>Sessions</th><th>Overall</th><th>Trend</th></tr></thead>
-          <tbody>${stats.map((s) => `<tr>
-            <td>${esc(s.name)}</td><td>${s.sessions}</td><td>${pct(s.made, s.attempts)}%</td>
+          <thead><tr><th>Drill</th><th>Sessions</th><th>Overall</th><th>Goal</th><th>Trend</th></tr></thead>
+          <tbody>${stats.map((s) => `<tr class="clickable" data-action="drill-detail" data-name="${esc(s.name)}">
+            <td><span class="link">${esc(s.name)}</span></td><td>${s.sessions}</td><td>${pct(s.made, s.attempts)}%</td>
+            <td>${goalFor(s.name) ? `${goalFor(s.name).pct}%` : '–'}</td>
             <td><span class="spark" title="${s.trend.join('%, ')}%">${s.trend.slice(-8).map((v) => `<i style="height:${Math.max(v, 4)}%"></i>`).join('')}</span></td>
           </tr>`).join('')}</tbody>
         </table>
@@ -1208,12 +1225,170 @@ function drillStats(who) {
   return [...map.values()].sort((a, b) => b.sessions - a.sessions);
 }
 
+// ---------- Drill goals & progress ----------
+// Goals are keyed by drill name, so one goal applies wherever the drill appears.
+const goalFor = (name) => state.goals[String(name).toLowerCase()] ?? null;
+const saveGoals = () => setMeta('goals', state.goals);
+
+// "7/10 makes", "8 of 10", "80%" → suggested success-% goal
+function suggestedGoal(target) {
+  const t = String(target ?? '');
+  const frac = t.match(/(\d+(?:\.\d+)?)\s*(?:\/|of|out of)\s*(\d+(?:\.\d+)?)/i);
+  if (frac && +frac[2] > 0 && +frac[1] <= +frac[2]) return Math.round((+frac[1] / +frac[2]) * 100);
+  const p = t.match(/(\d{1,3})\s*%/);
+  return p && +p[1] <= 100 ? +p[1] : null;
+}
+
+// Every logged result for a drill, oldest first. who: 'me' or a partner's name
+function drillHistory(name, who = 'me') {
+  const key = name.toLowerCase();
+  const rows = [];
+  for (const s of [...state.sessions].reverse()) {
+    if (who !== 'me' && s.partner !== who) continue;
+    s.results.forEach((r) => {
+      if (r.name.toLowerCase() !== key) return;
+      const made = who === 'me' ? r.made : r.partnerMade ?? 0;
+      const attempts = who === 'me' ? r.attempts : r.partnerAttempts ?? 0;
+      rows.push({
+        date: s.startedAt, week: s.week, plan: s.planName, made, attempts, pct: pct(made, attempts),
+        rating: who === 'me' ? r.rating : r.partnerRating,
+        notes: who === 'me' ? r.notes : r.partnerNotes,
+      });
+    });
+  }
+  return rows;
+}
+
+const goalText = (name) => { const g = goalFor(name); return g ? `🎯 ${g.pct}%` : ''; };
+const progressLink = (name, label = '📈 Goal & progress', showGoal = true) =>
+  `<button class="link small" data-action="drill-detail" data-name="${esc(name)}">${label}${showGoal && goalFor(name) ? ` · ${goalText(name)}` : ''}</button>`;
+
+// Live goal status on the session drill card
+function goalStatus(r, hits) {
+  const g = goalFor(r.name);
+  if (!g) return `<p class="goal-line">${progressLink(r.name, '🎯 Set a goal')}</p>`;
+  const made = hits.filter(Boolean).length;
+  const now = pct(made, hits.length);
+  const status = now === null ? 'no shots yet' : now >= g.pct ? `now ${now}% ✓ on track` : `now ${now}% · below goal`;
+  return `<p class="goal-line"><b>🎯 Goal ${g.pct}%</b> <span class="muted">· ${status}</span> · ${progressLink(r.name, '📈 Progress', false)}</p>`;
+}
+
+// Success % per session as a line, with the goal as a dashed reference line
+function progressChart(rows, goal) {
+  const pts = rows.filter((r) => r.pct !== null);
+  if (pts.length < 2) return '';
+  const W = 320, H = 150, L = 34, R = 42, T = 12, B = 22; // right margin holds the goal label
+  const x = (i) => L + (i * (W - L - R)) / (pts.length - 1);
+  const y = (v) => T + ((100 - v) * (H - T - B)) / 100;
+  const grid = [0, 50, 100].map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="c-grid"/>
+    <text x="${L - 6}" y="${y(v) + 4}" class="c-axis" text-anchor="end">${v}%</text>`).join('');
+  const goalLine = goal ? `<line x1="${L}" x2="${W - R}" y1="${y(goal.pct)}" y2="${y(goal.pct)}" class="c-goal"/>
+    <text x="${W - R + 5}" y="${y(goal.pct) + 3.5}" class="c-goal-label">Goal</text>
+    <text x="${W - R + 5}" y="${y(goal.pct) + 14}" class="c-goal-label">${goal.pct}%</text>` : '';
+  const path = pts.map((p, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.pct).toFixed(1)}`).join(' ');
+  const dots = pts.map((p, i) => {
+    const met = goal && p.pct >= goal.pct;
+    const label = `${new Date(p.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}: ${p.made}/${p.attempts} (${p.pct}%)${goal ? (met ? ', goal met' : ', below goal') : ''}`;
+    return `<g class="c-pt" data-action="chart-point" data-label="${esc(label)}" tabindex="0" role="button" aria-label="${esc(label)}">
+      <circle cx="${x(i)}" cy="${y(p.pct)}" r="12" class="c-hit"/>
+      <circle cx="${x(i)}" cy="${y(p.pct)}" r="4.5" class="c-dot ${goal && !met ? 'hollow' : ''}"/>
+      <title>${esc(label)}</title></g>`;
+  }).join('');
+  const first = new Date(pts[0].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const last = new Date(pts[pts.length - 1].date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `<figure class="chart">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Success rate for each session, ${pts.length} sessions">
+      ${grid}${goalLine}
+      <path d="${path}" class="c-line"/>
+      ${dots}
+      <text x="${L}" y="${H - 4}" class="c-axis">${esc(first)}</text>
+      <text x="${W - R}" y="${H - 4}" class="c-axis" text-anchor="end">${esc(last)}</text>
+    </svg>
+    <figcaption class="muted small" id="chartReadout">${goal ? '● met goal · ○ below goal · ' : ''}Tap a point for details</figcaption>
+  </figure>`;
+}
+
+function drillDetailView() {
+  const name = state.drillDetail;
+  const known = [...state.library, ...state.plans.flatMap((p) => p.drills)].find((d) => d.name.toLowerCase() === name.toLowerCase());
+  const goal = goalFor(name);
+  const suggestion = suggestedGoal(known?.target);
+  const partners = [...new Set(state.sessions.filter((s) => s.partner && s.results.some((r) => r.name.toLowerCase() === name.toLowerCase())).map((s) => s.partner))];
+  const who = partners.includes(state.detailWho) ? state.detailWho : 'me';
+  const rows = drillHistory(name, who);
+  const scored = rows.filter((r) => r.pct !== null);
+  const latest = scored.at(-1)?.pct;
+  const best = scored.length ? Math.max(...scored.map((r) => r.pct)) : null;
+  const last5 = scored.slice(-5);
+  const avg5 = last5.length ? Math.round(last5.reduce((t, r) => t + r.pct, 0) / last5.length) : null;
+  const metCount = goal ? scored.filter((r) => r.pct >= goal.pct).length : 0;
+  const tile = (label, value) => `<div class="tile"><span class="muted small">${label}</span><b>${value ?? '–'}</b></div>`;
+
+  return `<div class="sheet-panel" tabindex="-1">
+    <div class="sheet-head">
+      <h2 id="sheetTitle">${esc(name)}</h2>
+      <button class="btn ghost" data-action="close-detail" aria-label="Close">✕</button>
+    </div>
+    ${known?.target ? `<p class="small"><b>Drill target:</b> ${esc(known.target)}</p>` : ''}
+
+    <section class="card">
+      <h3>🎯 Goal</h3>
+      <div class="row tight goal-row">
+        <input id="goalPct" data-field="goal-pct" type="number" inputmode="numeric" min="1" max="100"
+          value="${goal?.pct ?? ''}" placeholder="${suggestion ?? 70}" aria-label="Goal success percentage">
+        <span>% success</span>
+        <button class="btn primary" data-action="save-goal">${goal ? 'Update' : 'Set goal'}</button>
+      </div>
+      ${!goal && suggestion ? `<p class="muted small">Suggested from the drill target: ${suggestion}%</p>` : ''}
+      ${goal ? `<button class="link small danger" data-action="clear-goal">Remove goal</button>` : ''}
+    </section>
+
+    <section class="card">
+      <div class="toolbar"><h3>📈 Progress</h3>${partners.length ? `<select data-field="detail-who" aria-label="Show progress for">
+        ${[['me', 'You'], ...partners.map((p) => [p, p])].map(([v, l]) => `<option value="${esc(v)}" ${v === who ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+      </select>` : ''}</div>
+      ${scored.length ? `<div class="tiles">
+          ${tile('Sessions', scored.length)}
+          ${tile('Latest', latest != null ? `${latest}%` : null)}
+          ${tile('Best', best != null ? `${best}%` : null)}
+          ${tile('Last 5 avg', avg5 != null ? `${avg5}%` : null)}
+          ${goal ? tile('Goal met', `${metCount} of ${scored.length}`) : ''}
+        </div>
+        ${progressChart(rows, goal) || '<p class="muted small">Log this drill in one more session to see a chart.</p>'}`
+        : '<p class="muted small">No made/miss results logged for this drill yet. Run it in a session and tap ✓ Made / ✗ Miss.</p>'}
+    </section>
+
+    ${rows.length ? `<section class="card">
+      <h3>Recent sessions</h3>
+      <table class="table">
+        <thead><tr><th>Date</th><th>Made</th><th>%</th>${goal ? '<th>Goal</th>' : ''}<th>★</th></tr></thead>
+        <tbody>${rows.slice(-10).reverse().map((r) => `<tr>
+          <td>${new Date(r.date).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}${r.week ? `<br><span class="muted small">Wk ${r.week}</span>` : ''}</td>
+          <td>${r.attempts ? `${r.made}/${r.attempts}` : '–'}</td>
+          <td>${r.pct !== null ? `${r.pct}%` : ''}</td>
+          ${goal ? `<td>${r.pct === null ? '' : r.pct >= goal.pct ? '✓ met' : '✗ below'}</td>` : ''}
+          <td class="gold">${starText(r.rating)}</td>
+        </tr>${r.notes ? `<tr class="note-row"><td colspan="${goal ? 5 : 4}" class="muted small note">${esc(r.notes)}</td></tr>` : ''}`).join('')}</tbody>
+      </table>
+    </section>` : ''}
+  </div>`;
+}
+
+function renderSheet() {
+  const sheet = $('#sheet');
+  const open = !!state.drillDetail;
+  sheet.hidden = !open;
+  document.body.classList.toggle('sheet-open', open);
+  if (open) sheet.innerHTML = drillDetailView();
+}
+
 function render() {
   document.querySelectorAll('.tabbar button').forEach((b) => {
     b.classList.toggle('on', b.dataset.tab === state.tab);
     b.classList.toggle('live', b.dataset.tab === 'session' && !!state.active);
   });
   $('#view').innerHTML = views[state.tab]();
+  renderSheet();
   updateWakeLock();
 }
 
@@ -1362,6 +1537,22 @@ const actions = {
     if (state.active?.planId === 'library') state.libSelected.clear();
   },
   'clear-selected': () => { state.libSelected.clear(); render(); },
+  'drill-detail': (el) => { state.drillDetail = el.dataset.name; state.detailWho = 'me'; renderSheet(); $('#sheet .sheet-panel')?.focus(); },
+  'close-detail': () => { state.drillDetail = null; render(); },
+  'save-goal': async () => {
+    const v = Math.round(num($('#goalPct')?.value));
+    if (v < 1 || v > 100) return toast('Enter a goal between 1 and 100%', true);
+    state.goals[state.drillDetail.toLowerCase()] = { pct: v };
+    await saveGoals();
+    renderSheet();
+    toast(`Goal set: ${v}%`);
+  },
+  'clear-goal': async () => {
+    delete state.goals[state.drillDetail.toLowerCase()];
+    await saveGoals();
+    renderSheet();
+  },
+  'chart-point': (el) => { const r = $('#chartReadout'); if (r) r.textContent = el.dataset.label; },
   'plan-from-selection': () => {
     const drills = [...state.libSelected].map((id) => state.library.find((d) => d.id === id)).filter(Boolean);
     state.libSelected.clear();
@@ -1477,6 +1668,7 @@ function bindEvents() {
   });
   document.addEventListener('change', (e) => {
     if (e.target.dataset.field === 'stats-player') { state.statsPlayer = e.target.value; render(); }
+    if (e.target.dataset.field === 'detail-who') { state.detailWho = e.target.value; renderSheet(); }
     if (e.target.dataset.field === 'b-min' && state.builder) {
       const d = state.builder.drills[+e.target.dataset.i];
       if (d) d.durationMin = Math.max(0, num(e.target.value));
@@ -1496,6 +1688,10 @@ function bindEvents() {
   });
   document.addEventListener('keydown', (e) => {
     if (e.target.id === 'partnerName' && e.key === 'Enter') { e.preventDefault(); actions['save-partner'](); }
+    if (e.target.id === 'goalPct' && e.key === 'Enter') { e.preventDefault(); actions['save-goal'](); }
+    if (e.key === 'Escape' && state.drillDetail) actions['close-detail']();
+    // Keyboard access for chart points
+    if ((e.key === 'Enter' || e.key === ' ') && e.target.dataset?.action === 'chart-point') { e.preventDefault(); actions['chart-point'](e.target); }
   });
   document.addEventListener('visibilitychange', () => {
     if (state.active) saveActive();
@@ -1548,6 +1744,7 @@ async function init() {
   await loadAll();
   state.active = upgradeActive((await getMeta('active')) ?? null);
   state.lastExport = (await getMeta('lastExport')) ?? null;
+  state.goals = (await getMeta('goals')) ?? {};
   state.persisted = (await navigator.storage?.persisted?.()) ?? false;
   if (state.active) state.tab = 'session';
   render();
