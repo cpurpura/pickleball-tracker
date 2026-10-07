@@ -806,8 +806,9 @@ function libraryView() {
         <button class="btn primary" data-action="new-drill">＋ New drill</button>
       </div>`}
     ${selected.length ? `<div class="select-bar">
-      <button class="btn primary" data-action="start-selected">▶ Start ${selected.length} drill${selected.length > 1 ? 's' : ''}</button>
-      <button class="btn" data-action="clear-selected">Clear</button>
+      <button class="btn primary" data-action="start-selected">▶ Start ${selected.length}</button>
+      <button class="btn" data-action="plan-from-selection">Save as plan</button>
+      <button class="btn ghost" data-action="clear-selected" aria-label="Clear selection">✕</button>
     </div>` : ''}`;
 }
 
@@ -837,8 +838,90 @@ function drillMeta(d) {
   return bits.length ? `<span class="muted small"> · ${bits.map(esc).join(' · ')}</span>` : '';
 }
 
+// ---------- Plan builder ----------
+const drillKey = (d) => d.name.toLowerCase();
+const copyDrill = ({ id, addedAt, libraryId, source, ...d }) => ({ ...d, videos: [...(d.videos || [])] });
+
+// Every drill you've imported (library first, then drills inside plans), one per name
+function drillPool() {
+  const pool = new Map();
+  for (const d of state.library) pool.set(drillKey(d), { ...copyDrill(d), source: 'Library' });
+  for (const p of state.plans) {
+    for (const d of p.drills) if (!pool.has(drillKey(d))) pool.set(drillKey(d), { ...copyDrill(d), source: p.name });
+  }
+  return [...pool.values()].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+function openBuilder(plan, drills = plan?.drills ?? []) {
+  state.builder = {
+    id: plan?.id ?? null,
+    name: plan?.name ?? '',
+    description: plan?.description ?? '',
+    drills: drills.map(copyDrill),
+  };
+  state.builderFilter = '';
+  state.tab = 'plans';
+  render();
+  scrollTo(0, 0);
+}
+
+function builderView() {
+  const b = state.builder;
+  const mins = b.drills.reduce((t, d) => t + (d.durationMin || 0), 0);
+  const pool = drillPool();
+  const filter = (state.builderFilter || '').toLowerCase();
+  const timesAdded = (key) => b.drills.filter((d) => drillKey(d) === key).length;
+
+  const chosen = b.drills.length ? `<ol class="build-list">${b.drills.map((d, i) => `<li>
+      <span class="bl-num">${i + 1}</span>
+      <div class="bl-main"><strong>${esc(d.name)}</strong>${d.category ? `<span class="muted small">${esc(d.category)}</span>` : ''}</div>
+      <label class="bl-min"><input type="number" inputmode="decimal" min="0" step="0.5" data-field="b-min" data-i="${i}"
+        value="${d.durationMin || ''}" placeholder="–" aria-label="Minutes for ${esc(d.name)}"><span class="small">min</span></label>
+      <div class="bl-btns">
+        <button class="link step" data-action="b-move" data-i="${i}" data-d="-1" aria-label="Move ${esc(d.name)} up" ${i === 0 ? 'disabled' : ''}>↑</button>
+        <button class="link step" data-action="b-move" data-i="${i}" data-d="1" aria-label="Move ${esc(d.name)} down" ${i === b.drills.length - 1 ? 'disabled' : ''}>↓</button>
+        <button class="link step danger" data-action="b-remove" data-i="${i}" aria-label="Remove ${esc(d.name)}">✕</button>
+      </div>
+    </li>`).join('')}</ol>`
+    : '<p class="muted small">Tap <b>＋ Add</b> on drills below. They run in the order listed here, and you can reorder them.</p>';
+
+  const poolList = pool.length ? `
+    ${pool.length > 6 ? `<input class="filter" data-field="b-filter" type="search" placeholder="Filter by name or category" value="${esc(state.builderFilter || '')}" aria-label="Filter drills">` : ''}
+    <ul class="pool">${pool.map((d) => {
+      const search = `${d.name} ${d.category}`.toLowerCase();
+      const n = timesAdded(drillKey(d));
+      return `<li class="pool-item" data-search="${esc(search)}" ${filter && !search.includes(filter) ? 'hidden' : ''}>
+        <div><strong>${esc(d.name)}</strong>
+          <p class="muted small">${[d.category, d.durationMin && `${d.durationMin} min`, `from ${d.source}`].filter(Boolean).map(esc).join(' · ')}</p></div>
+        <button class="btn small ${n ? '' : 'primary'}" data-action="b-add" data-k="${esc(drillKey(d))}">${n ? `＋ Again (${n})` : '＋ Add'}</button>
+      </li>`;
+    }).join('')}</ul>`
+    : '<p class="muted small">No drills yet. Import a plan or add drills to your drill library first.</p>';
+
+  return `<section class="card form">
+      <h2>${b.id ? 'Edit plan' : 'New plan'}</h2>
+      <label for="b-name">Plan name *</label>
+      <input id="b-name" data-field="b-name" value="${esc(b.name)}" placeholder="e.g. Tuesday kitchen work" autocomplete="off">
+      <label for="b-desc">Description</label>
+      <textarea id="b-desc" data-field="b-desc" rows="2" placeholder="Focus of this session (optional)">${esc(b.description)}</textarea>
+    </section>
+    <section class="card">
+      <h3>Drills in this plan <span class="muted small">· ${b.drills.length} drill${b.drills.length === 1 ? '' : 's'}${mins ? ` · ${mins} min` : ''}</span></h3>
+      ${chosen}
+    </section>
+    <section class="card">
+      <h3>Add drills</h3>
+      ${poolList}
+    </section>
+    <div class="select-bar">
+      <button class="btn primary" data-action="b-save">Save plan</button>
+      <button class="btn" data-action="b-cancel">Cancel</button>
+    </div>`;
+}
+
 const views = {
   plans() {
+    if (state.builder) return builderView();
     const sub = `<div class="seg subtabs" role="tablist">
       <button role="tab" class="${state.plansView !== 'drills' ? 'on' : ''}" data-action="plans-view" data-v="plans" aria-selected="${state.plansView !== 'drills'}">Plans</button>
       <button role="tab" class="${state.plansView === 'drills' ? 'on' : ''}" data-action="plans-view" data-v="drills" aria-selected="${state.plansView === 'drills'}">Drill library${state.library.length ? ` (${state.library.length})` : ''}</button>
@@ -866,6 +949,7 @@ const views = {
           </li>`).join('')}</ol>
           <div class="row">
             <button class="btn primary" data-action="start" data-id="${p.id}">▶ Start session</button>
+            <button class="btn" data-action="edit-plan" data-id="${p.id}">Edit</button>
             <button class="btn ghost danger" data-action="delete-plan" data-id="${p.id}">Delete</button>
           </div>
         </div>` : ''}
@@ -874,7 +958,10 @@ const views = {
 
     return `${sub}<div class="toolbar">
         <h2>Drill plans</h2>
-        <button class="btn primary" data-action="import" data-target="plans">＋ Import</button>
+        <div class="row tight">
+          <button class="btn" data-action="import" data-target="plans">Import</button>
+          <button class="btn primary" data-action="new-plan">＋ New</button>
+        </div>
       </div>
       ${list || `<div class="empty">
         <p>No plans yet.</p>
@@ -1275,6 +1362,61 @@ const actions = {
     if (state.active?.planId === 'library') state.libSelected.clear();
   },
   'clear-selected': () => { state.libSelected.clear(); render(); },
+  'plan-from-selection': () => {
+    const drills = [...state.libSelected].map((id) => state.library.find((d) => d.id === id)).filter(Boolean);
+    state.libSelected.clear();
+    state.plansView = 'plans';
+    openBuilder(null, drills);
+  },
+  'new-plan': () => openBuilder(null),
+  'edit-plan': (el) => openBuilder(planById(el.dataset.id)),
+  'b-add': (el) => {
+    const d = drillPool().find((x) => drillKey(x) === el.dataset.k);
+    if (!d) return;
+    state.builder.drills.push(copyDrill(d));
+    render();
+    toast(`Added “${d.name}” (#${state.builder.drills.length})`);
+  },
+  'b-move': (el) => {
+    const list = state.builder.drills;
+    const i = +el.dataset.i;
+    const j = i + +el.dataset.d;
+    if (j < 0 || j >= list.length) return;
+    [list[i], list[j]] = [list[j], list[i]];
+    render();
+  },
+  'b-remove': (el) => { state.builder.drills.splice(+el.dataset.i, 1); render(); },
+  'b-cancel': () => {
+    if (state.builder.drills.length && !confirm('Discard your changes to this plan?')) return;
+    state.builder = null;
+    render();
+  },
+  'b-save': async () => {
+    const b = state.builder;
+    const name = b.name.trim();
+    if (!name) { $('#b-name')?.focus(); return toast('Give the plan a name', true); }
+    if (!b.drills.length) return toast('Add at least one drill', true);
+    if (state.plans.some((p) => p.name.toLowerCase() === name.toLowerCase() && p.id !== b.id)) {
+      return toast('You already have a plan with that name', true);
+    }
+    const existing = b.id ? planById(b.id) : null;
+    const plan = {
+      ...(existing || {}), // keeps program info (weeks, role rotation) when editing
+      id: existing?.id || uid(),
+      name,
+      description: b.description.trim(),
+      drills: b.drills.map(copyDrill),
+      importedAt: existing?.importedAt || new Date().toISOString(),
+    };
+    await db.put('plans', plan);
+    state.builder = null;
+    await loadAll();
+    state.plansView = 'plans';
+    state.openPlan = plan.id;
+    render();
+    scrollTo(0, 0);
+    toast(existing ? 'Plan updated' : 'Plan created');
+  },
   'save-to-library': async (el) => {
     const d = planById(el.dataset.plan)?.drills[+el.dataset.i];
     if (!d) return;
@@ -1320,6 +1462,14 @@ function bindEvents() {
       document.querySelectorAll('.lib-item').forEach((el) => { el.hidden = !el.dataset.search.includes(q); });
       return;
     }
+    if (field === 'b-filter') {
+      state.builderFilter = e.target.value;
+      const q = state.builderFilter.toLowerCase();
+      document.querySelectorAll('.pool-item').forEach((el) => { el.hidden = !el.dataset.search.includes(q); });
+      return;
+    }
+    if (field === 'b-name' && state.builder) { state.builder.name = e.target.value; return; }
+    if (field === 'b-desc' && state.builder) { state.builder.description = e.target.value; return; }
     if (!field || !state.active) return;
     if (field === 'drill-notes') currentResult()[notesKey(playerOf())] = e.target.value;
     if (field === 'session-notes') state.active.notes = e.target.value;
@@ -1327,6 +1477,11 @@ function bindEvents() {
   });
   document.addEventListener('change', (e) => {
     if (e.target.dataset.field === 'stats-player') { state.statsPlayer = e.target.value; render(); }
+    if (e.target.dataset.field === 'b-min' && state.builder) {
+      const d = state.builder.drills[+e.target.dataset.i];
+      if (d) d.durationMin = Math.max(0, num(e.target.value));
+      render();
+    }
     if (e.target.dataset.field === 'lib-select') {
       // Re-adding moves a drill to the end, so the run order follows the order you tick
       if (e.target.checked) state.libSelected.add(e.target.value);

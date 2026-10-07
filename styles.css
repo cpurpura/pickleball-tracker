@@ -176,6 +176,26 @@ textarea {
 .builtin-row p { margin: 2px 0 0; }
 .builtin-row .btn { flex: 0 0 auto; }
 
+.build-list { list-style: none; padding: 0; margin: 0; }
+.build-list li { display: flex; align-items: center; gap: 8px; padding: 8px 0; border-top: 1px solid var(--line); }
+.bl-num {
+  flex: 0 0 26px; height: 26px; display: grid; place-items: center; border-radius: 50%;
+  background: var(--brand); color: var(--brand-ink); font-weight: 700; font-size: .8rem;
+}
+.bl-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bl-main strong { overflow-wrap: anywhere; }
+.bl-min { display: flex; align-items: center; gap: 4px; margin: 0; font-weight: 400; }
+.bl-min input { width: 58px; min-height: 38px; padding: 0 6px; text-align: center; }
+.bl-btns { display: flex; gap: 2px; }
+.bl-btns .link.step { margin-left: 0; min-width: 30px; }
+.link.step.danger { color: var(--bad); }
+
+.pool { list-style: none; padding: 0; margin: 0; }
+.pool-item { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-top: 1px solid var(--line); }
+.pool-item[hidden] { display: none; }
+.pool-item p { margin: 2px 0 0; }
+.pool-item .btn { flex: 0 0 auto; }
+
 .subtabs { margin-bottom: 14px; }
 .subtabs button { flex-direction: row; justify-content: center; min-height: 40px; }
 
