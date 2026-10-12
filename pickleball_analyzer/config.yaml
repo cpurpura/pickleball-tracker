@@ -92,11 +92,13 @@ tee:
   tee_height_in: null        # height of the tee top (--tee-height)
   target: board              # board (rebounder) or net (--target)
   board_distance_ft: 12      # tee to the face of the board, along the hitting line (--board-distance)
-  camera_distance_ft: 12     # phone to the tee (--camera-distance); used for sound delays
+  camera_distance_ft: 12     # phone to the tee (--camera-distance); for sound delays and footwork
+  camera_height_ft: 3        # lens height off the floor (keep the phone level); for stance width
   target_side: auto          # which way you hit across the frame: auto, left or right
   rest_s: 0.6                # the ball must sit still this long to count as "on the tee"
   reappear_s: 0.5            # a ball that reappears within this time was only hidden, not hit
-  pose_window_s: [0.5, 0.25] # body pose is measured this long before / after each contact
+  pose_window_s: [1.5, 0.25] # body pose is measured this long before / after each contact
+  feet_moving_speed: 1.0     # a foot moving faster than this (ft/s) hasn't set yet
   launch_window_s: 0.15      # frames after contact used for launch speed and angle
   ball_min_area: 60          # ball size limits in pixels at 1080p (the camera is closer than on court)
   ball_max_area: 8000
@@ -105,6 +107,8 @@ tee:
   coaching:
     min_ahead_of_front_foot_in: 0
     max_contact_spread_in: 3
+    min_feet_set_s: 0.1         # feet should be planted at least this long before contact
+    max_head_forward_in: 6      # head this far past the middle of your feet = reaching / off balance
 
 review:
   window_s: 0.8              # seconds shown before/after each hit

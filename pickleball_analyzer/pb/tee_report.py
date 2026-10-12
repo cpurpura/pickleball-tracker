@@ -21,7 +21,11 @@ COLS = [  # key, label, help, format
     ("knee_angle", "Knee °", "180 = straight leg", "{:.0f}"),
     ("hip_drop_pct", "Hip drop %", "how much lower your hips are vs. standing tall", "{:.0f}"),
     ("elbow_angle", "Elbow °", "paddle arm at contact", "{:.0f}"),
-    ("stance_in", "Stance (in)", "distance between your ankles across the frame", "{:.0f}"),
+    ("feet_set_s", "Feet set (s)", "how long your feet had been planted before contact; 0 = still moving", "{:.2f}"),
+    ("moved_ft", "Moved (ft)", "how far you traveled to the ball in the 1.5 s before contact", "{:.1f}"),
+    ("stance_in", "Stance (in)", "distance between your ankles at contact", "{:.0f}"),
+    ("stagger_in", "Stagger (in)", "how far one foot was ahead of the other along the hitting line", "{:.0f}"),
+    ("head_over_base_in", "Head over feet (in)", "head vs. the middle of your feet; + = toward the target", "{:+.1f}"),
 ]
 
 
@@ -66,6 +70,17 @@ def flags(reps, cfg):
             cls = "warn" if sd > c["max_contact_spread_in"] else "good"
             out.append((cls, f"Contact point varies by ± {sd:.1f} in from rep to rep "
                              f"(aim for under {c['max_contact_spread_in']} in)."))
+    feet = [val(r, "feet_set_s") for r in reps if val(r, "feet_set_s") is not None]
+    if feet:
+        moving = sum(f < c["min_feet_set_s"] for f in feet) / len(feet)
+        out.append(("warn" if moving > 0.25 else "good",
+                    f"Feet still moving at contact on {moving:.0%} of reps (median set {np.median(feet):.2f} s before contact)."))
+    head = [val(r, "head_over_base_in") for r in reps if val(r, "head_over_base_in") is not None]
+    if head:
+        reach = sum(h > c["max_head_forward_in"] for h in head) / len(head)
+        if reach > 0.25:
+            out.append(("warn", f"Head was more than {c['max_head_forward_in']} in past the middle of your feet on "
+                                f"{reach:.0%} of reps: you may be reaching instead of moving your feet."))
     pops = [r for r in reps if r.get("audio")]
     board = [r for r in pops if r.get("board_speed_mph")]
     if pops and cfg["tee"]["target"] == "board" and len(board) < 0.5 * len(pops):

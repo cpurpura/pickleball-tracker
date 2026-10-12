@@ -78,11 +78,16 @@ python pbshot.py tee practice.mp4 --shot "forehand drive" --tee-height 32 --boar
 python pbshot.py tee-report          # rebuild tee_report.html from every tee session
 ```
 
-**Filming:** put the phone on a tripod **facing your chest** (face-on), about **12 ft from the tee** with the lens at about tee height. The hitting line should run straight across the frame. Get your whole body, the tee and a few feet of the ball's flight in frame. Record ordinary **60 fps** video with sound. Slow-motion modes often drop or stretch the audio. Keep other ball-colored things away from the tee.
+**Filming:** put the phone on a tripod at a **right angle to the hitting line**, so the ball flies straight across the frame. For dinks, drops and put-aways (hit square to the target) the camera sees you **in profile**. For drives hit with your shoulder toward the target, it faces your chest. Put it about **12 ft from the tee**, with the lens about 3 ft off the floor, and **keep the phone level** (not tilted up or down). Pass any different distance or height with `--camera-distance` and `camera_height_ft` in `config.yaml`; the footwork measurements depend on both. Get your whole body, the tee and a few feet of the ball's flight in frame. Record ordinary **60 fps** video with sound. Slow-motion modes often drop or stretch the audio. Keep other ball-colored things away from the tee.
 
 **Board or net?**
 - **Board:** the pop of the ball hitting the board gives an accurate average ball speed, worked out from sound and the tee-to-board distance. The rebound also brings the ball back to you. Measure from the tee to the face of the board along the hitting line and pass it as `--board-distance`. About 12–15 ft works for drives.
 - **Net:** quieter and safer for full-power drives. You still get launch speed and angle from the video, but not board speed. Use `--target net`.
+
+**Drills:**
+- **Dinks and drops, standing still:** rest the ball at knee height on a cone or a cup on a box (the app doesn't care what it sits on, as long as it isn't ball-colored). Hit softly into the board about 8–10 ft away. Watch knee bend, hip drop and torso lean together, which shows whether you're bending your knees or bending at the waist.
+- **Moving into a put-away:** set the tee at its top height and start a couple of shuffle steps away. Move in and hit down into a net (`--target net`), since put-aways would bounce on the floor before reaching the board. Watch feet set, head over feet, and launch angle (negative = hit downward).
+- Record **one video per drill** with its own `--shot` label, so the trends compare like with like.
 
 **Tee height and shots (26–39 in tee):** waist-height drives and serves fit this range well. A legal serve is contacted below the navel, which for most adults means the lower end. Dinks and third-shot drops are usually hit below the knee, lower than the tee goes. Practice those against the board without the tee.
 
@@ -91,7 +96,14 @@ python pbshot.py tee-report          # rebuild tee_report.html from every tee se
 - contact height on your body (0 = hips, 1 = shoulders)
 - paddle-hand speed
 - launch speed and angle (from video), plus speed to the board (from sound)
-- knee bend, hip drop, elbow angle, stance width
+- knee bend, hip drop, elbow angle, torso lean
+- **footwork:**
+  - **Feet set:** how long your feet had been planted before contact (0 = still moving)
+  - **Moved:** how far you traveled to the ball in the 1.5 s before contact
+  - **Stance and stagger:** distance between your feet, and how far one was ahead of the other along the hitting line
+  - **Head over feet:** where your head was relative to the middle of your feet. Far ahead usually means reaching instead of moving your feet.
+
+  Each foot is placed on the floor from how low it sits in the frame, so stepping toward or away from the camera, such as shuffling along the kitchen line, counts as much as stepping across it.
 
 The report adds the spread of each measure (how repeatable you are), a contact-frame picture of every rep, and trends across sessions.
 

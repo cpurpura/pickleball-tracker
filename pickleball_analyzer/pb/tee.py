@@ -5,7 +5,9 @@ line runs across the frame). That view makes 2D pose far more accurate than the 
 view. For each rep this measures:
   - contact point: how far in front of your front foot and hips, and the height relative
     to your body (0 = hips, 1 = shoulders)
-  - body: knee bend, hip drop, elbow angle, torso lean, stance width
+  - body: knee bend, hip drop, elbow angle, torso lean
+  - footwork: how long your feet were set before contact, how far you moved to the ball,
+    stance width and whether your head was over your feet
   - paddle-hand speed at contact
   - ball: launch speed and angle from the video, and the average speed to a rebound board
     from the time between the paddle pop and the board pop
@@ -31,6 +33,8 @@ BALL_DIAMETER_IN = 2.9      # USA Pickleball spec: 2.87-2.97 in
 IN_PER_S_PER_MPH = 17.6
 FTS_TO_MPH = 0.681818
 N_KP = 17
+NOSE, L_EAR, R_EAR = 0, 3, 4
+ANKLE_HEIGHT_FT = 0.29      # ankle joint above the floor (~3.5 in)
 
 
 # ---------------------------------------------------------------- pass 1: scan the video
@@ -334,8 +338,6 @@ def measure_rep(rep, P, standing, hand, fps, direction):
         ff = front_foot_x(kp, direction)
         if ff is not None:
             m["ahead_of_front_foot_in"] = round(float(direction * (bx - ff) / ppi), 1)
-    if _ok(kp, L_AN, R_AN):
-        m["stance_in"] = round(float(abs(kp[L_AN, 0] - kp[R_AN, 0]) / ppi), 0)
     if _ok(kp, sh, el, wr):
         m["elbow_angle"] = round(_angle(kp[sh], kp[el], kp[wr]), 0)
     knees = [_angle(kp[h], kp[k], kp[a]) for h, k, a in ((L_HIP, L_KN, L_AN), (R_HIP, R_KN, R_AN)) if _ok(kp, h, k, a)]
@@ -348,6 +350,105 @@ def measure_rep(rep, P, standing, hand, fps, direction):
         (fa, a), (fb, b) = pts[0], pts[-1]
         v = np.hypot(*(b[:2] - a[:2])) / (fb - fa) * fps / ppi / IN_PER_S_PER_MPH
         m["hand_speed_mph"] = round(float(v), 1)
+    return m
+
+
+def _series(P, frames, idx):
+    """Image position of the mean of keypoints idx at each frame (NaN where not seen)."""
+    out = np.full((len(frames), 2), np.nan)
+    for i, f in enumerate(frames):
+        if f in P and _ok(P[f][0], *idx):
+            out[i] = P[f][0][list(idx), :2].mean(axis=0)
+    return out
+
+
+def _smooth(a, k=2):
+    """Moving average over 2k+1 frames, skipping gaps (pose keypoints jitter by a pixel or two)."""
+    out = np.full_like(a, np.nan)
+    for i in range(len(a)):
+        seg = a[max(0, i - k):i + k + 1]
+        seg = seg[~np.isnan(seg[:, 0])]
+        if len(seg):
+            out[i] = seg.mean(axis=0)
+    return out
+
+
+def _floor(xy, f_px, h, cx, cy):
+    """Floor position (x across the frame, z away from the camera; feet) of ankles at image xy.
+
+    A level camera h ft above the ankles sees an ankle z ft away f_px * h / z pixels below the
+    middle of the frame. NaN for anything at or above the middle (can't be on the floor).
+    """
+    xy = np.atleast_2d(xy)
+    dy = xy[:, 1] - cy
+    z = np.full(len(xy), np.nan)
+    ok = dy > 1
+    z[ok] = f_px * h / dy[ok]
+    return np.stack([(xy[:, 0] - cx) * z / f_px, z], axis=1)
+
+
+def footwork(rep, P, fps, direction, t, size):
+    """Feet set, distance moved, stance, contact vs. front foot and balance, from the pose.
+
+    Camera model: a level camera camera_distance_ft from the tee and camera_height_ft off
+    the floor; the resting ball gives pixels per foot at the tee, hence the focal length.
+    Each foot is placed on the floor from how low it is in the frame, so stepping toward
+    or away from the camera counts as much as stepping across it.
+    """
+    c = rep["frame"]
+    if _pose_at(P, c) is None:
+        return {}
+    m = {}
+    pre, lag = int(t["pose_window_s"][0] * fps), max(1, int(round(0.05 * fps)))
+    frames = list(range(c - pre, c + lag + 1))  # index pre = contact
+    ppi = 2 * rep["ball_r_px"] / BALL_DIAMETER_IN
+    zc = t["camera_distance_ft"]
+    f_px = ppi * 12 * zc
+    cx, cy = size[0] / 2, size[1] / 2
+    h = t["camera_height_ft"] - ANKLE_HEIGHT_FT
+    feet = [_floor(_smooth(_series(P, frames, (i,))), f_px, h, cx, cy) for i in (L_AN, R_AN)]
+
+    # Feet set: time since the last frame either foot was moving
+    last_move, seen = -1, False
+    for g in feet:
+        sp = np.full(len(frames), np.nan)
+        sp[lag:len(frames) - lag] = np.hypot(*(g[2 * lag:] - g[:-2 * lag]).T) / (2 * lag / fps)  # ft/s
+        ok = ~np.isnan(sp[:pre + 1])
+        if ok.sum() >= 0.5 * (pre + 1):
+            seen = True
+            moving = np.where(ok & (sp[:pre + 1] > t["feet_moving_speed"]))[0]
+            if len(moving):
+                last_move = max(last_move, int(moving[-1]))
+    if seen:
+        m["feet_set_s"] = round((pre - last_move) / fps if last_move >= 0 else pre / fps, 2)
+
+    # Distance moved: furthest your hips were from where they were at contact. Distance from
+    # the camera comes from your torso's size on screen (unaffected by lifting a foot).
+    hip = _smooth(_series(P, frames, (L_HIP, R_HIP)))
+    torso = np.hypot(*(_smooth(_series(P, frames, (L_SH, R_SH))) - hip).T)
+    (zl, zr) = feet[0][pre, 1], feet[1][pre, 1]
+    zbody = np.nanmean([zl, zr]) if not (np.isnan(zl) and np.isnan(zr)) else zc
+    if not np.isnan(torso[pre]):
+        z = zbody * torso[pre] / torso
+        x = (hip[:, 0] - cx) * z / f_px
+        d = np.hypot(x - x[pre], z - z[pre])[:pre + 1]
+        if (~np.isnan(d)).sum() >= 0.5 * (pre + 1):
+            m["moved_ft"] = round(float(np.nanmax(d)), 1)
+
+    # At contact: stance, stagger, ball vs. front foot, head vs. the middle of the feet
+    gl, gr = feet[0][pre], feet[1][pre]
+    if not (np.isnan(gl).any() or np.isnan(gr).any()):
+        m["stance_in"] = round(float(np.hypot(*(gl - gr)) * 12), 0)
+        m["stagger_in"] = round(float(abs(gl[0] - gr[0]) * 12), 0)
+        if direction:
+            ball_x = (rep["tee_xy"][0] - cx) * zc / f_px
+            front = max(gl[0], gr[0], key=lambda v: direction * v)
+            m["ahead_of_front_foot_in"] = round(float(direction * (ball_x - front) * 12), 1)
+            kp = _pose_at(P, c)
+            head = next((kp[list(i), 0].mean() for i in ((NOSE,), (L_EAR, R_EAR), (L_SH, R_SH)) if _ok(kp, *i)), None)
+            if head is not None:
+                head_x = (head - cx) * (gl[1] + gr[1]) / 2 / f_px
+                m["head_over_base_in"] = round(float(direction * (head_x - (gl[0] + gr[0]) / 2) * 12), 1)
     return m
 
 
@@ -429,6 +530,7 @@ def analyze_tee(video, cfg, sess_dir, player, max_seconds=None, redo=False):
         rep["id"] = i
         rep["t"] = round(rep["t"], 3)
         rep["metrics"] = measure_rep(rep, P, standing, player["hand"], fps, direction)
+        rep["metrics"].update(footwork(rep, P, fps, direction, t, (sc["meta"]["width"], sc["meta"]["height"])))
         if save_thumb(video, rep, P, direction, thumbs / f"rep_{i:03d}.jpg"):
             rep["thumb"] = f"{thumbs.name}/rep_{i:03d}.jpg"
 

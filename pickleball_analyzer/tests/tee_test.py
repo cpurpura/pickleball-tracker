@@ -132,7 +132,8 @@ def run(video, cfg, label):
 def main():
     OUT.mkdir(parents=True, exist_ok=True)
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
-    cfg["tee"].update(camera_distance_ft=CAM_FT, board_distance_ft=BOARD_FT, target="board", tee_height_in=32)
+    cfg["tee"].update(camera_distance_ft=CAM_FT, board_distance_ft=BOARD_FT, target="board", tee_height_in=32,
+                      camera_height_ft=(612 - H / 2) / (PPI * 12) + 0.29)  # puts the drawn feet at the tee's depth
     evs = schedule()
     n = evs[-1]["contact"] + 90
     tee.run_pose = lambda video, frames, cfg, tee_x: {f: skeleton(f, evs) for f in frames}
