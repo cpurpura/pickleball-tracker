@@ -1,0 +1,114 @@
+# ---------------------------------------------------------------------------
+# Pickleball shot analyzer settings
+# ---------------------------------------------------------------------------
+
+players:
+  # Who stands on which side of the net in a typical video (can override per run
+  # with --near / --far). "near" = the side closest to the camera.
+  near: Chad
+  far: Partner
+  handedness:          # right / left, by name
+    Chad: right
+    Partner: right
+
+pose:
+  enabled: true
+  model: yolo11n-pose.pt     # downloads automatically; yolo11s-pose.pt is more accurate but slower
+  conf: 0.35
+  imgsz: 960                 # bigger = better for the far player, slower
+  every_n_frames: 1          # 2 halves processing time on CPU (poses in between are interpolated)
+
+ball:
+  # HSV color range for the ball. Run `python pbshot.py tune-ball video.mp4` to find yours.
+  # Default fits a typical yellow / optic-green indoor ball.
+  hsv_lower: [22, 90, 120]
+  hsv_upper: [45, 255, 255]
+  use_motion: true           # only keep ball-colored pixels that are moving
+  motion_threshold: 18
+  min_area: 12               # pixel areas at 1080p (auto-scaled for other resolutions)
+  max_area: 900
+  min_circularity: 0.35      # motion blur stretches the ball, so keep this lenient
+  link_gate_frac: 0.05       # max jump per frame as a fraction of frame width
+  max_link_gap: 4
+  min_tracklet_len: 5
+  min_tracklet_travel_frac: 0.03
+  interp_gap: 6
+
+events:
+  velocity_window_s: 0.05    # window for measuring ball direction
+  min_turn_deg: 40           # how sharply the ball must change direction to count as a hit/bounce
+  min_event_gap_s: 0.12
+  hit_search_dist: 0.9       # look for a contact when the ball turns within this many body-heights of a player
+  hit_max_wrist_dist: 0.35   # ...and call it a hit if it gets this close to a wrist (otherwise bounce)
+  refine_s: 0.15             # search window to snap a hit to the moment of closest approach
+  pose_hit_wrist_speed: 4.5  # body-heights/sec; used only when the ball tracker lost the ball
+  same_side_merge_s: 0.9
+  rally_gap_s: 3.0
+
+classify:
+  # Starter rules used until you've tagged enough shots to train your own model
+  baseline_ft: 17            # >= this far from the net counts as "back"
+  kitchen_zone_ft: 10        # <= this far from the net counts as "at the kitchen"
+  drive_speed_fts: 38
+  dink_speed_fts: 18
+  lob_depth_ft: 15
+  drop_land_ft: 10
+  overhead_contact_height: 1.4
+
+coaching:
+  dink_in_kitchen_target_pct: 80
+  drop_in_kitchen_target_pct: 60
+  min_hip_drop_pct_soft_game: 8
+  max_torso_lean_deg: 30
+  ready_min_paddle_height: 0.3
+  max_reach: 1.8
+
+audio:
+  # Hit detection from the paddle "pop" in the soundtrack. Times contact far more precisely
+  # than the ball tracker and catches hits where the ball is blurred or hidden.
+  # Check your settings with `python pbshot.py tune-audio drill.mp4 --plot`.
+  enabled: true
+  sample_rate: 22050
+  highpass_hz: 1000          # cut voices, footsteps and HVAC hum below this
+  hop_s: 0.002               # loudness is measured every 2 ms
+  floor_window_s: 0.5        # background noise level is measured over this window
+  min_snr_db: 15             # a pop must be this far above the background...
+  min_rise_db: 12            # ...start this suddenly (within ~10 ms)...
+  min_decay_db: 6            # ...and fade this much within ~40 ms (squeaks and voices don't)
+  min_rel_db: -30            # ignore pops this much quieter than the session's hard hits
+  min_gap_s: 0.08
+  offset_s: 0.0              # audio/video sync fix if your camera needs one (+ = sound is late)
+  camera_behind_baseline_ft: 5   # for the speed-of-sound delay (~1 ms per foot to the hitter)
+  match_s: 0.08              # a video hit and a pop this close together are the same hit
+  snap_to_audio: true        # move video hits to the pop's frame
+  unmatched_conf_scale: 0.5  # video hits with no pop are probably bounces: lower their confidence
+  drop_unmatched: false      # true = remove them outright (try it once your audio is clean)
+  swing_speed_frac: 0.6      # a pop with the ball out of sight needs a swing this fast (x pose_hit_wrist_speed)
+
+tee:
+  # Solo practice off a batting tee: python pbshot.py tee video.mp4  (see README "Tee mode").
+  # The first five can be set per session on the command line.
+  shot: forehand drive       # label for the session (--shot)
+  tee_height_in: null        # height of the tee top (--tee-height)
+  target: board              # board (rebounder) or net (--target)
+  board_distance_ft: 12      # tee to the face of the board, along the hitting line (--board-distance)
+  camera_distance_ft: 12     # phone to the tee (--camera-distance); used for sound delays
+  target_side: auto          # which way you hit across the frame: auto, left or right
+  rest_s: 0.6                # the ball must sit still this long to count as "on the tee"
+  reappear_s: 0.5            # a ball that reappears within this time was only hidden, not hit
+  pose_window_s: [0.5, 0.25] # body pose is measured this long before / after each contact
+  launch_window_s: 0.15      # frames after contact used for launch speed and angle
+  ball_min_area: 60          # ball size limits in pixels at 1080p (the camera is closer than on court)
+  ball_max_area: 8000
+  min_circularity: 0.55      # roundness needed for a ball resting on the tee
+  speed_range_fts: [10, 150] # plausible ball speeds (ft/s) when pairing a hit with the board's pop
+  coaching:
+    min_ahead_of_front_foot_in: 0
+    max_contact_spread_in: 3
+
+review:
+  window_s: 0.8              # seconds shown before/after each hit
+  slowmo: 0.35               # playback speed in the review tool
+  max_display_width: 1600
+
+model_path: models/shot_classifier.joblib
