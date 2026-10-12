@@ -11,6 +11,7 @@ Typical workflow for a new video:
 Or just:  python pbshot.py all drill.mp4
 
 Solo practice off a batting tee:
+    python pbshot.py check-setup clip.mp4        # check a short test clip of your setup first
     python pbshot.py tee practice.mp4 --shot "forehand drive" --tee-height 32 --board-distance 12
 """
 import argparse
@@ -126,7 +127,8 @@ def cmd_tee(a, cfg):
     from pb.tee import analyze_tee
     t = cfg["tee"]
     for key, v in (("shot", a.shot), ("tee_height_in", a.tee_height), ("target", a.target),
-                   ("board_distance_ft", a.board_distance), ("camera_distance_ft", a.camera_distance)):
+                   ("board_distance_ft", a.board_distance), ("camera_distance_ft", a.camera_distance),
+                   ("camera_height_ft", a.camera_height)):
         if v is not None:
             t[key] = v
     name = a.player or cfg["players"]["near"]
@@ -142,6 +144,17 @@ def cmd_tee_report(a, cfg):
     if not files:
         sys.exit("No tee sessions found. Run `tee` on a video first.")
     build_tee_report(files, cfg, a.out)
+
+
+def cmd_check_setup(a, cfg):
+    from pb.setup_check import check_setup
+    t = cfg["tee"]
+    for key, v in (("target", a.target), ("board_distance_ft", a.board_distance),
+                   ("camera_distance_ft", a.camera_distance), ("camera_height_ft", a.camera_height)):
+        if v is not None:
+            t[key] = v
+    ck = check_setup(a.video, cfg, SESS, SESS / f"{stem(a.video)}.setup.html", a.max_seconds)
+    sys.exit(1 if ck.verdict == "fail" else 0)
 
 
 def cmd_all(a, cfg):
@@ -187,10 +200,20 @@ def main():
     s.add_argument("--target", choices=["board", "net"])
     s.add_argument("--board-distance", type=float, help="feet from the tee to the rebound board")
     s.add_argument("--camera-distance", type=float, help="feet from the phone to the tee")
+    s.add_argument("--camera-height", type=float, help="lens height off the floor, in feet")
     s.add_argument("--player", help="whose session this is (for handedness)")
     s.add_argument("--max-seconds", type=float, help="only process the first N seconds (for testing)")
     s.add_argument("--redo", action="store_true", help="rescan the video even if cached")
     s.set_defaults(fn=cmd_tee)
+
+    s = sub.add_parser("check-setup", help="check a short test clip of your tee setup before a real session")
+    s.add_argument("video")
+    s.add_argument("--target", choices=["board", "net"])
+    s.add_argument("--board-distance", type=float, help="feet from the tee to the rebound board")
+    s.add_argument("--camera-distance", type=float, help="feet from the phone to the tee")
+    s.add_argument("--camera-height", type=float, help="lens height off the floor, in feet")
+    s.add_argument("--max-seconds", type=float, default=60.0, help="only check the first N seconds")
+    s.set_defaults(fn=cmd_check_setup)
 
     s = sub.add_parser("tee-report", help="rebuild tee_report.html from every tee session")
     s.add_argument("shots", nargs="*"); s.add_argument("--out", default=str(ROOT / "tee_report.html"))

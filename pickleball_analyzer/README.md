@@ -80,6 +80,23 @@ python pbshot.py tee-report          # rebuild tee_report.html from every tee se
 
 **Filming:** put the phone on a tripod at a **right angle to the hitting line**, so the ball flies straight across the frame. For dinks, drops and put-aways (hit square to the target) the camera sees you **in profile**. For drives hit with your shoulder toward the target, it faces your chest. Put it about **12 ft from the tee**, with the lens about 3 ft off the floor, and **keep the phone level** (not tilted up or down). Pass any different distance or height with `--camera-distance` and `camera_height_ft` in `config.yaml`; the footwork measurements depend on both. Get your whole body, the tee and a few feet of the ball's flight in frame. Record ordinary **60 fps** video with sound. Slow-motion modes often drop or stretch the audio. Keep other ball-colored things away from the tee.
 
+**Check your setup first:** record a 30–60 s clip of your real setup with a few normal hits, then run:
+
+```bash
+python pbshot.py check-setup clip.mp4 --board-distance 12 --camera-distance 12 --camera-height 3
+```
+
+You get a READY / NOT READY checklist covering:
+- frame rate and steadiness, resolution, lighting, ball-colored clutter
+- the mic picking up paddle pops
+- the ball found on the tee, and tracked in flight
+- room in the picture for the ball's flight
+- board pops pairing with hits, and agreeing with the speed seen on video (it suggests a corrected board distance if not)
+- your whole body in frame
+- whether your camera height and distance settings match the video
+
+Every problem comes with a fix. It also saves `sessions/<clip>.setup.html` with a frame showing what the app found.
+
 **Board or net?**
 - **Board:** the pop of the ball hitting the board gives an accurate average ball speed, worked out from sound and the tee-to-board distance. The rebound also brings the ball back to you. Measure from the tee to the face of the board along the hitting line and pass it as `--board-distance`. About 12–15 ft works for drives.
 - **Net:** quieter and safer for full-power drives. You still get launch speed and angle from the video, but not board speed. Use `--target net`.

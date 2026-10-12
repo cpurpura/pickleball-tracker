@@ -512,7 +512,7 @@ def analyze_tee(video, cfg, sess_dir, player, max_seconds=None, redo=False):
     if pops is None:
         msg += " (no soundtrack: every ball that left the tee counts)"
     elif no_pop:
-        msg += f"; {no_pop} times the ball left the tee with no pop (picked up or knocked off) were skipped"
+        msg += f"; skipped {no_pop} time{'s' * (no_pop > 1)} the ball left the tee with no pop (picked up or knocked off)"
     print(msg)
 
     print("[3/3] Measuring each rep ...")

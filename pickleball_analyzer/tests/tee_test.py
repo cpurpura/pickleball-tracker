@@ -129,7 +129,8 @@ def run(video, cfg, label):
     return json.loads((sess / f"{video.stem}.tee.json").read_text()), sess
 
 
-def main():
+def make_session():
+    """Write the synthetic session (silent and with sound); returns (silent, video, events, cfg)."""
     OUT.mkdir(parents=True, exist_ok=True)
     cfg = yaml.safe_load(open(ROOT / "config.yaml"))
     cfg["tee"].update(camera_distance_ft=CAM_FT, board_distance_ft=BOARD_FT, target="board", tee_height_in=32,
@@ -144,7 +145,11 @@ def main():
     wavfile.write(wav, SR, (soundtrack(evs, n, np.random.default_rng(1)) * 32767).astype(np.int16))
     subprocess.run([ffmpeg_exe(), "-v", "error", "-y", "-i", str(silent), "-i", str(wav), "-c:v", "copy",
                     "-c:a", "aac", "-shortest", str(video)], check=True)
+    return silent, video, evs, cfg
 
+
+def main():
+    silent, video, evs, cfg = make_session()
     data, sess = run(video, cfg, "audio")
     hits = [e for e in evs if e["rep"]]
     print("\n truth (mph / deg / in)      measured launch | board | ahead | hand")
